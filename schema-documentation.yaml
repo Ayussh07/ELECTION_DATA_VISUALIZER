@@ -1,0 +1,540 @@
+# Indian Election Data - Database Schema Documentation
+# This document describes the database schema structure, tables, columns, and relationships
+
+database:
+  name: election_data
+  type: SQLite
+  version: "3.x"
+  description: "Normalized relational database for Indian Lok Sabha election data (1991-2019)"
+
+tables:
+  - name: states
+    description: "Stores all Indian states and union territories"
+    columns:
+      - name: id
+        type: INTEGER
+        primary_key: true
+        auto_increment: true
+        nullable: false
+        description: "Unique identifier for each state"
+      
+      - name: name
+        type: TEXT
+        unique: true
+        nullable: false
+        description: "Name of the state or union territory"
+        example: "Andhra Pradesh"
+      
+      - name: created_at
+        type: DATETIME
+        default: "datetime('now')"
+        nullable: true
+        description: "Timestamp when the record was created"
+    
+    indexes: []
+    relationships:
+      - type: one_to_many
+        target_table: constituencies
+        foreign_key: state_id
+
+  - name: parties
+    description: "Stores all political parties that have contested elections"
+    columns:
+      - name: id
+        type: INTEGER
+        primary_key: true
+        auto_increment: true
+        nullable: false
+        description: "Unique identifier for each party"
+      
+      - name: name
+        type: TEXT
+        unique: true
+        nullable: false
+        description: "Name of the political party"
+        example: "BJP"
+      
+      - name: party_type_tcpd
+        type: TEXT
+        nullable: true
+        description: "Party classification (National Party, Regional Party, etc.)"
+        example: "National Party"
+      
+      - name: party_id
+        type: TEXT
+        nullable: true
+        description: "External party identifier from TCPD dataset"
+      
+      - name: created_at
+        type: DATETIME
+        default: "datetime('now')"
+        nullable: true
+        description: "Timestamp when the record was created"
+    
+    indexes: []
+    relationships:
+      - type: one_to_many
+        target_table: results
+        foreign_key: party_id
+
+  - name: constituencies
+    description: "Stores all parliamentary constituencies across India"
+    columns:
+      - name: id
+        type: INTEGER
+        primary_key: true
+        auto_increment: true
+        nullable: false
+        description: "Unique identifier for each constituency"
+      
+      - name: state_id
+        type: INTEGER
+        foreign_key: states.id
+        nullable: false
+        description: "Reference to the state this constituency belongs to"
+      
+      - name: name
+        type: TEXT
+        nullable: false
+        description: "Name of the constituency"
+        example: "Araku"
+      
+      - name: constituency_no
+        type: INTEGER
+        nullable: true
+        description: "Constituency number within the state"
+      
+      - name: constituency_type
+        type: TEXT
+        nullable: true
+        description: "Type of constituency (General, Reserved, etc.)"
+      
+      - name: sub_region
+        type: TEXT
+        nullable: true
+        description: "Sub-region or district information"
+      
+      - name: assembly_no
+        type: INTEGER
+        nullable: true
+        description: "Assembly constituency number if applicable"
+      
+      - name: created_at
+        type: DATETIME
+        default: "datetime('now')"
+        nullable: true
+        description: "Timestamp when the record was created"
+    
+    unique_constraints:
+      - columns: [state_id, name, constituency_no]
+        description: "Ensures unique constituency within a state"
+    
+    indexes:
+      - name: idx_constituencies_state_id
+        columns: [state_id]
+        description: "Index for faster state-based queries"
+    
+    relationships:
+      - type: many_to_one
+        target_table: states
+        foreign_key: state_id
+      - type: one_to_many
+        target_table: results
+        foreign_key: constituency_id
+
+  - name: elections
+    description: "Stores election metadata including year, poll numbers, and delimitation information"
+    columns:
+      - name: id
+        type: INTEGER
+        primary_key: true
+        auto_increment: true
+        nullable: false
+        description: "Unique identifier for each election"
+      
+      - name: year
+        type: INTEGER
+        nullable: false
+        description: "Election year"
+        example: 2019
+        constraints:
+          min: 1991
+          max: 2019
+      
+      - name: month
+        type: INTEGER
+        nullable: true
+        description: "Month when election was held"
+        constraints:
+          min: 1
+          max: 12
+      
+      - name: poll_no
+        type: INTEGER
+        nullable: true
+        description: "Poll number for phased elections"
+      
+      - name: delimid
+        type: INTEGER
+        nullable: true
+        description: "Delimitation ID"
+      
+      - name: election_type
+        type: TEXT
+        nullable: true
+        description: "Type of election"
+      
+      - name: created_at
+        type: DATETIME
+        default: "datetime('now')"
+        nullable: true
+        description: "Timestamp when the record was created"
+    
+    unique_constraints:
+      - columns: [year, month, poll_no, delimid]
+        description: "Ensures unique election records"
+    
+    indexes:
+      - name: idx_elections_year
+        columns: [year]
+        description: "Index for faster year-based queries"
+    
+    relationships:
+      - type: one_to_many
+        target_table: results
+        foreign_key: election_id
+
+  - name: candidates
+    description: "Stores candidate information including personal details, education, and profession"
+    columns:
+      - name: id
+        type: INTEGER
+        primary_key: true
+        auto_increment: true
+        nullable: false
+        description: "Unique identifier for each candidate"
+      
+      - name: name
+        type: TEXT
+        nullable: false
+        description: "Full name of the candidate"
+        example: "Narendra Modi"
+      
+      - name: sex
+        type: TEXT
+        nullable: true
+        description: "Gender of the candidate"
+        enum: [M, F]
+        example: "M"
+      
+      - name: myneta_education
+        type: TEXT
+        nullable: true
+        description: "Education level from MyNeta dataset"
+        example: "Graduate"
+      
+      - name: tcpd_prof_main
+        type: TEXT
+        nullable: true
+        description: "Primary profession code from TCPD"
+      
+      - name: tcpd_prof_main_desc
+        type: TEXT
+        nullable: true
+        description: "Primary profession description"
+      
+      - name: tcpd_prof_second
+        type: TEXT
+        nullable: true
+        description: "Secondary profession code from TCPD"
+      
+      - name: tcpd_prof_second_desc
+        type: TEXT
+        nullable: true
+        description: "Secondary profession description"
+      
+      - name: pid
+        type: TEXT
+        nullable: true
+        description: "External candidate identifier"
+      
+      - name: created_at
+        type: DATETIME
+        default: "datetime('now')"
+        nullable: true
+        description: "Timestamp when the record was created"
+    
+    indexes: []
+    relationships:
+      - type: one_to_many
+        target_table: results
+        foreign_key: candidate_id
+
+  - name: results
+    description: "Main fact table storing election results with votes, margins, turnout, and candidate performance metrics"
+    columns:
+      - name: id
+        type: INTEGER
+        primary_key: true
+        auto_increment: true
+        nullable: false
+        description: "Unique identifier for each result record"
+      
+      - name: election_id
+        type: INTEGER
+        foreign_key: elections.id
+        nullable: false
+        description: "Reference to the election"
+      
+      - name: constituency_id
+        type: INTEGER
+        foreign_key: constituencies.id
+        nullable: false
+        description: "Reference to the constituency"
+      
+      - name: candidate_id
+        type: INTEGER
+        foreign_key: candidates.id
+        nullable: false
+        description: "Reference to the candidate"
+      
+      - name: party_id
+        type: INTEGER
+        foreign_key: parties.id
+        nullable: false
+        description: "Reference to the party"
+      
+      - name: position
+        type: INTEGER
+        nullable: true
+        description: "Final position/rank of the candidate (1 = winner)"
+        constraints:
+          min: 1
+      
+      - name: votes
+        type: REAL
+        nullable: true
+        description: "Total votes received by the candidate"
+        example: 456789
+      
+      - name: candidate_type
+        type: TEXT
+        nullable: true
+        description: "Type of candidate"
+      
+      - name: valid_votes
+        type: REAL
+        nullable: true
+        description: "Total valid votes in the constituency"
+      
+      - name: electors
+        type: REAL
+        nullable: true
+        description: "Total number of eligible voters"
+      
+      - name: n_cand
+        type: INTEGER
+        nullable: true
+        description: "Number of candidates in the constituency"
+      
+      - name: turnout_percentage
+        type: REAL
+        nullable: true
+        description: "Voter turnout percentage for the constituency"
+        constraints:
+          min: 0
+          max: 100
+        example: 78.45
+      
+      - name: vote_share_percentage
+        type: REAL
+        nullable: true
+        description: "Percentage of votes received by the candidate"
+        constraints:
+          min: 0
+          max: 100
+        example: 52.34
+      
+      - name: vote_share_pct
+        type: REAL
+        nullable: true
+        description: "Alternative vote share percentage field"
+      
+      - name: deposit_lost
+        type: TEXT
+        nullable: true
+        description: "Whether the candidate lost their deposit"
+      
+      - name: margin
+        type: REAL
+        nullable: true
+        description: "Victory margin in absolute votes"
+        example: 12345
+      
+      - name: margin_percentage
+        type: REAL
+        nullable: true
+        description: "Victory margin as percentage of votes"
+        constraints:
+          min: 0
+        example: 5.67
+      
+      - name: margin_pct
+        type: REAL
+        nullable: true
+        description: "Alternative margin percentage field"
+      
+      - name: enop
+        type: REAL
+        nullable: true
+        description: "Effective number of parties"
+      
+      - name: last_poll
+        type: INTEGER
+        nullable: true
+        description: "Last election year this candidate contested"
+      
+      - name: contested
+        type: INTEGER
+        nullable: true
+        description: "Number of times candidate has contested"
+      
+      - name: last_party
+        type: TEXT
+        nullable: true
+        description: "Party in last election"
+      
+      - name: last_party_id
+        type: TEXT
+        nullable: true
+        description: "Last party identifier"
+      
+      - name: last_constituency_name
+        type: TEXT
+        nullable: true
+        description: "Last constituency contested"
+      
+      - name: same_constituency
+        type: INTEGER
+        nullable: true
+        description: "Whether candidate contested same constituency (1 = yes, 0 = no)"
+      
+      - name: same_party
+        type: INTEGER
+        nullable: true
+        description: "Whether candidate contested from same party (1 = yes, 0 = no)"
+      
+      - name: no_terms
+        type: REAL
+        nullable: true
+        description: "Number of terms served"
+      
+      - name: turncoat
+        type: INTEGER
+        nullable: true
+        description: "Whether candidate switched parties (1 = yes, 0 = no)"
+      
+      - name: incumbent
+        type: INTEGER
+        nullable: true
+        description: "Whether candidate was incumbent (1 = yes, 0 = no)"
+      
+      - name: recontest
+        type: INTEGER
+        nullable: true
+        description: "Whether candidate is recontesting (1 = yes, 0 = no)"
+      
+      - name: created_at
+        type: DATETIME
+        default: "datetime('now')"
+        nullable: true
+        description: "Timestamp when the record was created"
+    
+    indexes:
+      - name: idx_results_election_id
+        columns: [election_id]
+        description: "Index for faster election-based queries"
+      
+      - name: idx_results_constituency_id
+        columns: [constituency_id]
+        description: "Index for faster constituency-based queries"
+      
+      - name: idx_results_party_id
+        columns: [party_id]
+        description: "Index for faster party-based queries"
+      
+      - name: idx_results_candidate_id
+        columns: [candidate_id]
+        description: "Index for faster candidate-based queries"
+      
+      - name: idx_results_position
+        columns: [position]
+        description: "Index for filtering winners (position = 1)"
+      
+      - name: idx_results_turnout
+        columns: [turnout_percentage]
+        description: "Index for turnout-based queries"
+      
+      - name: idx_results_vote_share
+        columns: [vote_share_percentage]
+        description: "Index for vote share queries"
+      
+      - name: idx_results_margin
+        columns: [margin_percentage]
+        description: "Index for margin-based queries"
+    
+    relationships:
+      - type: many_to_one
+        target_table: elections
+        foreign_key: election_id
+      - type: many_to_one
+        target_table: constituencies
+        foreign_key: constituency_id
+      - type: many_to_one
+        target_table: candidates
+        foreign_key: candidate_id
+      - type: many_to_one
+        target_table: parties
+        foreign_key: party_id
+
+relationships:
+  overview: |
+    The database follows a normalized relational structure:
+    
+    1. States contain multiple Constituencies (one-to-many)
+    2. Elections contain multiple Results (one-to-many)
+    3. Constituencies contain multiple Results (one-to-many)
+    4. Candidates have multiple Results across elections (one-to-many)
+    5. Parties have multiple Results across elections (one-to-many)
+    
+    The Results table is the central fact table that connects:
+    - Elections (when)
+    - Constituencies (where)
+    - Candidates (who)
+    - Parties (which party)
+
+data_constraints:
+  year_range:
+    min: 1991
+    max: 2019
+    description: "Election data is limited to years 1991-2019"
+  
+  percentage_fields:
+    - turnout_percentage
+    - vote_share_percentage
+    - margin_percentage
+    range: [0, 100]
+    description: "Percentage fields should be between 0 and 100"
+  
+  position:
+    min: 1
+    description: "Position must be at least 1 (winner)"
+
+notes:
+  - "All foreign keys have CASCADE delete behavior"
+  - "The database uses SQLite with better-sqlite3 driver"
+  - "Timestamps use SQLite's datetime('now') function"
+  - "Some fields may be NULL if data was not available in source datasets"
+  - "The schema supports data from multiple election years (1991-2019)"
+  - "Indexes are optimized for common query patterns (year, state, party filters)"
+
