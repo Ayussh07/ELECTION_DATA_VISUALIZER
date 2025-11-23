@@ -1,7 +1,24 @@
-// Request validation middleware
+/**
+ * Request Validation Middleware
+ * 
+ * This module provides validation middleware functions for API endpoints.
+ * Uses express-validator to validate and sanitize request parameters.
+ * 
+ * All validators return 400 Bad Request with error details if validation fails.
+ */
+
 const { body, query, param, validationResult } = require('express-validator');
 
-// Validate year parameter
+/**
+ * Validate Year Parameter
+ * 
+ * Validates that the 'year' query parameter is a valid integer between 1950 and 2100.
+ * Year parameter is optional - if not provided, validation passes.
+ * 
+ * Usage: router.get('/endpoint', validateYear, handler)
+ * 
+ * @returns {Array} Express-validator middleware chain
+ */
 const validateYear = [
   query('year')
     .optional()
@@ -16,7 +33,17 @@ const validateYear = [
   }
 ];
 
-// Validate pagination parameters
+/**
+ * Validate Pagination Parameters
+ * 
+ * Validates 'limit' and 'offset' query parameters for pagination.
+ * - limit: Must be between 1 and 1000 (optional, no default)
+ * - offset: Must be a non-negative integer (optional, defaults to 0)
+ * 
+ * Usage: router.get('/endpoint', validatePagination, handler)
+ * 
+ * @returns {Array} Express-validator middleware chain
+ */
 const validatePagination = [
   query('limit')
     .optional()
@@ -35,7 +62,17 @@ const validatePagination = [
   }
 ];
 
-// Validate search query
+/**
+ * Validate Search Query Parameters
+ * 
+ * Validates search endpoint parameters:
+ * - q: Required search query string (1-100 characters)
+ * - type: Optional search type, must be one of: 'candidate', 'constituency', 'party', 'all'
+ * 
+ * Usage: router.get('/search', validateSearch, handler)
+ * 
+ * @returns {Array} Express-validator middleware chain
+ */
 const validateSearch = [
   query('q')
     .notEmpty()
@@ -55,7 +92,16 @@ const validateSearch = [
   }
 ];
 
-// Validate seat changes parameters
+/**
+ * Validate Seat Changes Parameters
+ * 
+ * Validates parameters for comparing seat counts between two election years.
+ * Both year1 and year2 are required and must be valid integers between 1950 and 2100.
+ * 
+ * Usage: router.get('/analytics/seat-changes', validateSeatChanges, handler)
+ * 
+ * @returns {Array} Express-validator middleware chain
+ */
 const validateSeatChanges = [
   query('year1')
     .notEmpty()
@@ -82,6 +128,8 @@ module.exports = {
   validateSearch,
   validateSeatChanges
 };
+
+
 
 
 

@@ -1,3 +1,17 @@
+/**
+ * Indian Election Data API Server
+ * 
+ * This is the main Express.js server that provides RESTful API endpoints
+ * for accessing and analyzing Indian Lok Sabha election data (1991-2019).
+ * 
+ * The server connects to a SQLite database and exposes endpoints for:
+ * - Fetching election results with various filters
+ * - Analyzing seat shares, vote shares, and turnout
+ * - Gender representation trends
+ * - Victory margins and closest contests
+ * - Advanced analytics and correlations
+ */
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -8,22 +22,40 @@ const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
 
-// Middleware
+// Security middleware - adds HTTP headers to protect against common vulnerabilities
 app.use(helmet());
+
+// CORS middleware - allows cross-origin requests from the frontend
 app.use(cors());
+
+// Logging middleware - logs HTTP requests in development mode for debugging
 app.use(morgan('dev'));
+
+// Body parsing middleware - parses JSON request bodies
 app.use(express.json());
+
+// URL encoding middleware - parses URL-encoded form data
 app.use(express.urlencoded({ extended: true }));
 
-// Routes
+// Mount the elections router - all election-related endpoints are under /api
 app.use('/api', electionsRouter);
 
-// Health check endpoint
+/**
+ * Health Check Endpoint
+ * 
+ * Simple endpoint to verify that the server is running and responsive.
+ * Useful for monitoring and load balancers to check server availability.
+ */
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Server is running' });
 });
 
-// API documentation endpoint
+/**
+ * API Documentation Endpoint
+ * 
+ * Returns a JSON object listing all available API endpoints with their
+ * query parameters. This serves as basic API documentation for developers.
+ */
 app.get('/api', (req, res) => {
   res.json({
     message: 'Indian Election Data API',
@@ -51,17 +83,29 @@ app.get('/api', (req, res) => {
   });
 });
 
-// 404 handler
+/**
+ * 404 Not Found Handler
+ * 
+ * Catches any requests to routes that don't exist and returns a 404 error.
+ * This middleware must be placed before the error handler but after all routes.
+ */
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// Error handler (must be last)
+/**
+ * Global Error Handler
+ * 
+ * This is the final middleware that catches any errors thrown by route handlers
+ * or other middleware. It formats error responses consistently and logs errors
+ * for debugging. Must be the last middleware in the chain.
+ */
 app.use(errorHandler);
 
+// Server configuration - use PORT from environment variable or default to 5000
 const PORT = process.env.PORT || 5000;
 
-// Log environment info
+// Log startup information to help with debugging and deployment
 console.log('\n🚀 Starting Election Data Backend Server...');
 console.log(`   Node version: ${process.version}`);
 console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
@@ -70,6 +114,12 @@ console.log(`   API URL: http://localhost:${PORT}/api`);
 console.log(`   Health check: http://localhost:${PORT}/health`);
 console.log('');
 
+/**
+ * Start the HTTP server and listen for incoming requests
+ * 
+ * The server will automatically attempt to connect to the SQLite database
+ * when it starts (connection is handled in connection.js module).
+ */
 app.listen(PORT, () => {
   console.log(`✅ Server is running on port ${PORT}`);
   console.log(`📚 API documentation: http://localhost:${PORT}/api`);

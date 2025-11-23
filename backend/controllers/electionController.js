@@ -1,7 +1,27 @@
+/**
+ * Election Data Controller
+ * 
+ * This controller contains all the business logic for handling election data API requests.
+ * It provides functions to query the database and return formatted JSON responses for:
+ * - Basic data retrieval (years, states, parties, constituencies, elections)
+ * - Analytics and aggregations (seat share, vote share, turnout)
+ * - Trend analysis (gender trends, vote share over time)
+ * - Advanced analytics (correlations, closest contests, education analysis)
+ * 
+ * All functions use the queryWithCheck helper which handles database connection
+ * and converts PostgreSQL-style queries to SQLite syntax.
+ */
+
 const { queryWithCheck } = require('../database/connection');
 const { calculateCorrelation } = require('../database/sqlite-helpers');
 
-// Helper: SQL fragment to filter only years with sufficient data (>= 1000 records)
+/**
+ * SQL Filter for Valid Years
+ * 
+ * This filter ensures we only include election years that have sufficient data
+ * (at least 1000 result records). This excludes incomplete or invalid years
+ * from the dataset, ensuring data quality in all queries.
+ */
 const validYearsFilter = `AND e.year IN (
   SELECT e2.year
   FROM elections e2
@@ -11,8 +31,15 @@ const validYearsFilter = `AND e.year IN (
   HAVING COUNT(r2.id) >= 1000
 )`;
 
-// Get all available years (only years that have sufficient data in the database)
-// Only return years that have at least 1000 result records (to exclude incomplete/invalid years)
+/**
+ * Get All Available Election Years
+ * 
+ * Returns a list of all election years that have sufficient data in the database.
+ * Only includes years with at least 1000 result records to ensure data completeness.
+ * 
+ * @route GET /api/years
+ * @returns {number[]} Array of election years (e.g., [2019, 2014, 2009, ...])
+ */
 const getYears = async (req, res) => {
   const result = await queryWithCheck(`
     SELECT e.year, COUNT(r.id) as record_count
@@ -29,19 +56,45 @@ const getYears = async (req, res) => {
   res.json(years);
 };
 
-// Get all states
+/**
+ * Get All States
+ * 
+ * Returns a list of all Indian states and union territories in the database.
+ * Used for populating state filter dropdowns in the frontend.
+ * 
+ * @route GET /api/states
+ * @returns {Array<{id: number, name: string}>} Array of state objects
+ */
 const getStates = async (req, res) => {
   const result = await queryWithCheck('SELECT id, name FROM states ORDER BY name');
   res.json(result.rows);
 };
 
-// Get all parties
+/**
+ * Get All Political Parties
+ * 
+ * Returns a list of all political parties that have participated in elections.
+ * Includes party type classification (National/Regional) when available.
+ * 
+ * @route GET /api/parties
+ * @returns {Array<{id: number, name: string, party_type_tcpd: string}>} Array of party objects
+ */
 const getParties = async (req, res) => {
   const result = await queryWithCheck('SELECT id, name, party_type_tcpd FROM parties ORDER BY name');
   res.json(result.rows);
 };
 
-// Get constituencies (districts) by state - return unique names only
+/**
+ * Get Constituencies by State (Grouped by Name)
+ * 
+ * Returns unique constituency names, optionally filtered by state.
+ * Groups constituencies with the same name together (useful when multiple
+ * constituencies share a name across different states or election years).
+ * 
+ * @route GET /api/constituencies
+ * @param {number} [state] - Optional state ID to filter constituencies
+ * @returns {Array<{id: number, name: string}>} Array of unique constituency names
+ */
 const getConstituencies = async (req, res) => {
   const { state } = req.query;
   
@@ -65,7 +118,18 @@ const getConstituencies = async (req, res) => {
   res.json(result.rows);
 };
 
-// Get individual constituencies (not grouped) by state and/or district
+/**
+ * Get Individual Constituencies List
+ * 
+ * Returns all individual constituency records (not grouped by name).
+ * Useful when you need to distinguish between constituencies with the same name
+ * but different numbers or types. Can be filtered by state and/or district.
+ * 
+ * @route GET /api/constituencies-list
+ * @param {number} [state] - Optional state ID to filter constituencies
+ * @param {number} [district] - Optional district ID to filter constituencies
+ * @returns {Array<{id: number, name: string, constituency_no: number, constituency_type: string}>} Array of constituency objects
+ */
 const getConstituenciesList = async (req, res) => {
   const { state, district } = req.query;
   
@@ -108,7 +172,22 @@ const getConstituenciesList = async (req, res) => {
   res.json(result.rows);
 };
 
-// Get election results with filters
+/**
+ * Get Election Results with Filters
+ * 
+ * Returns detailed election results with support for multiple filters.
+ * This is the main endpoint for querying election data. Results include
+ * candidate information, vote counts, vote shares, turnout, and margins.
+ * 
+ * @route GET /api/elections
+ * @param {number} [year] - Filter by election year
+ * @param {number} [state] - Filter by state ID
+ * @param {number} [party] - Filter by party ID
+ * @param {string} [constituency] - Filter by constituency name (partial match)
+ * @param {number} [limit=100] - Maximum number of results to return (pagination)
+ * @param {number} [offset=0] - Number of results to skip (pagination)
+ * @returns {Array} Array of election result objects with candidate, party, and vote information
+ */
 const getElections = async (req, res) => {
   const { year, state, party, constituency, limit = 100, offset = 0 } = req.query;
   
@@ -168,7 +247,22 @@ const getElections = async (req, res) => {
   res.json(result.rows);
 };
 
-// Get seat share by party for a year
+/**
+ * Get Seat Share by Party
+ * 
+ * Calculates the number of seats won by each party in a given election year.
+ * Only counts winners (position = 1). Supports filtering by state, party, gender,
+ * district, or specific constituency. Also includes winner names grouped by district.
+ * 
+ * @route GET /api/seat-share
+ * @param {number} year - Election year (required)
+ * @param {number} [state] - Optional state ID filter
+ * @param {number} [party] - Optional party ID filter
+ * @param {string} [gender] - Optional gender filter ('M' or 'F')
+ * @param {number} [district] - Optional district ID filter
+ * @param {number} [constituency] - Optional constituency ID filter
+ * @returns {Array<{party: string, seats: number, winnersByDistrict: Array}>} Array of party seat counts with winner details
+ */
 const getSeatShare = async (req, res) => {
   const { year, state, party, gender, district, constituency } = req.query;
   if (!year) {
@@ -317,7 +411,18 @@ const getSeatShare = async (req, res) => {
   res.json(rowsWithWinners);
 };
 
-// Get turnout by state for a year
+/**
+ * Get Voter Turnout by State
+ * 
+ * Calculates the average voter turnout percentage for each state in a given election year.
+ * Turnout is calculated as (valid_votes / electors) * 100. Results are sorted by
+ * turnout percentage in descending order.
+ * 
+ * @route GET /api/turnout
+ * @param {number} year - Election year (required)
+ * @param {number} [state] - Optional state ID to filter to a single state
+ * @returns {Array<{state: string, turnout_pct: number}>} Array of state turnout percentages
+ */
 const getTurnout = async (req, res) => {
   const { year, state } = req.query;
   if (!year) {
@@ -348,7 +453,23 @@ const getTurnout = async (req, res) => {
   res.json(result.rows);
 };
 
-// Get vote share by party and state
+/**
+ * Get Vote Share by Party
+ * 
+ * Calculates the percentage of total votes received by each party in a given election year.
+ * Can return aggregated results (by party only) or detailed results (by state and party).
+ * Supports filtering by state, gender, district, and constituency.
+ * 
+ * @route GET /api/vote-share
+ * @param {number} year - Election year (required)
+ * @param {number} [party] - Optional party ID filter (only used when aggregate=false)
+ * @param {boolean} [aggregate=true] - If true, returns vote share by party only. If false, returns by state and party.
+ * @param {number} [state] - Optional state ID filter
+ * @param {string} [gender] - Optional gender filter
+ * @param {number} [district] - Optional district ID filter
+ * @param {number} [constituency] - Optional constituency ID filter
+ * @returns {Array} Array of vote share data (format depends on aggregate parameter)
+ */
 const getVoteShare = async (req, res) => {
   const { year, party, aggregate } = req.query;
   if (!year) {
@@ -502,7 +623,20 @@ const getVoteShareByParty = async (req, res) => {
   res.json(result.rows);
 };
 
-// Get gender representation trends
+/**
+ * Get Gender Representation Trends
+ * 
+ * Analyzes gender representation in elections over time. Returns the count and
+ * percentage of candidates by gender for each election year. Supports filtering
+ * by party, state, gender, and district to analyze specific subsets of data.
+ * 
+ * @route GET /api/gender-trend
+ * @param {number} [party] - Optional party ID filter
+ * @param {number} [state] - Optional state ID filter
+ * @param {string} [gender] - Optional gender filter ('M' or 'F')
+ * @param {number} [district] - Optional district ID filter
+ * @returns {Array<{year: number, gender: string, count: number, percentage: number}>} Array of gender statistics by year
+ */
 const getGenderTrend = async (req, res) => {
   const { party, state, gender, district } = req.query;
   
@@ -578,7 +712,21 @@ const getGenderTrend = async (req, res) => {
   res.json(rowsWithPercentage);
 };
 
-// Get narrowest victories
+/**
+ * Get Narrowest Victories (Closest Contests)
+ * 
+ * Returns the closest election contests (smallest victory margins) for analysis.
+ * Shows winner and runner-up information along with vote margins. Useful for
+ * identifying competitive constituencies and analyzing election dynamics.
+ * 
+ * @route GET /api/margins
+ * @param {number} [year] - Optional election year filter
+ * @param {number} [state] - Optional state ID filter
+ * @param {number} [limit=10] - Maximum number of results to return
+ * @param {number} [district] - Optional district ID filter
+ * @param {number} [constituency] - Optional constituency ID filter
+ * @returns {Array<{year, state_name, constituency_name, winner_party, winner, winner_votes, runner_up_party, runner_up, runner_up_votes, margin, margin_percentage}>} Array of closest contest details
+ */
 const getMargins = async (req, res) => {
   const { year, state, limit = 10, district, constituency } = req.query;
   
@@ -650,7 +798,18 @@ const getMargins = async (req, res) => {
   res.json(result.rows);
 };
 
-// Search candidates, constituencies, or parties
+/**
+ * Search Candidates, Constituencies, or Parties
+ * 
+ * Provides a unified search endpoint that can search across candidates,
+ * constituencies, and parties. Uses case-insensitive partial matching.
+ * Useful for implementing autocomplete or search functionality in the frontend.
+ * 
+ * @route GET /api/search
+ * @param {string} q - Search query string (required)
+ * @param {string} [type='all'] - Type of search: 'candidate', 'constituency', 'party', or 'all'
+ * @returns {Object} Object containing search results for each requested type
+ */
 const search = async (req, res) => {
   const { q, type = 'all' } = req.query;
   if (!q) {
@@ -689,7 +848,25 @@ const search = async (req, res) => {
   res.json(results);
 };
 
-// Get key performance indicators
+/**
+ * Get Key Performance Indicators (KPIs)
+ * 
+ * Calculates high-level statistics for a given election year:
+ * - Total seats contested
+ * - Overall voter turnout percentage
+ * - Percentage of women candidates
+ * 
+ * Supports filtering by state, gender, district, and constituency to get
+ * KPIs for specific subsets of data.
+ * 
+ * @route GET /api/kpis
+ * @param {number} year - Election year (required)
+ * @param {number} [state] - Optional state ID filter
+ * @param {string} [gender] - Optional gender filter
+ * @param {number} [district] - Optional district ID filter
+ * @param {number} [constituency] - Optional constituency ID filter
+ * @returns {Object<{total_seats: number, overall_turnout: number, women_candidates_pct: number}>} KPI metrics object
+ */
 const getKPIs = async (req, res) => {
   const { year, state, gender, district, constituency } = req.query;
   if (!year) {
@@ -775,7 +952,16 @@ const getKPIs = async (req, res) => {
   });
 };
 
-// Analytics: Highest turnout state
+/**
+ * Analytics: Get State with Highest Turnout
+ * 
+ * Identifies the state with the highest average voter turnout for a given election year.
+ * Useful for understanding regional voting patterns and civic engagement.
+ * 
+ * @route GET /api/analytics/highest-turnout
+ * @param {number} year - Election year (required)
+ * @returns {Object<{state: string, avg_turnout: number}>} State with highest turnout
+ */
 const getHighestTurnout = async (req, res) => {
   const { year } = req.query;
   if (!year) {
@@ -800,7 +986,18 @@ const getHighestTurnout = async (req, res) => {
   res.json(result.rows[0] || null);
 };
 
-// Analytics: Seat changes between years
+/**
+ * Analytics: Get Seat Changes Between Two Election Years
+ * 
+ * Compares seat counts for each party between two election years and calculates
+ * the change (gain or loss). Shows which parties gained or lost seats over time.
+ * Useful for analyzing political shifts and party performance trends.
+ * 
+ * @route GET /api/analytics/seat-changes
+ * @param {number} year1 - First election year (required)
+ * @param {number} year2 - Second election year (required)
+ * @returns {Array<{party: string, year1_seats: number, year2_seats: number, change: number}>} Array of party seat changes
+ */
 const getSeatChanges = async (req, res) => {
   const { year1, year2 } = req.query;
   if (!year1 || !year2) {
@@ -860,7 +1057,17 @@ const getSeatChanges = async (req, res) => {
   res.json(result.rows);
 };
 
-// Analytics: Women candidates percentage
+/**
+ * Analytics: Women Candidates Percentage
+ * 
+ * Analyzes the percentage of women candidates over time, optionally filtered by state.
+ * Returns year-by-year statistics showing gender representation trends in candidate pools.
+ * 
+ * @route GET /api/analytics/women-candidates
+ * @param {number} [year] - Optional election year filter
+ * @param {number} [state] - Optional state ID filter
+ * @returns {Array<{year: number, state: string, women_count: number, total_count: number, percentage: number}>} Array of women candidate statistics
+ */
 const getWomenCandidates = async (req, res) => {
   const { year, state } = req.query;
   
@@ -900,7 +1107,16 @@ const getWomenCandidates = async (req, res) => {
   res.json(result.rows);
 };
 
-// Analytics: Closest contests
+/**
+ * Analytics: Get Closest Election Contests
+ * 
+ * Returns the 10 closest election contests (smallest victory margins) for a given year.
+ * Similar to getMargins but specifically for analytics, showing the most competitive races.
+ * 
+ * @route GET /api/analytics/closest-contests
+ * @param {number} [year] - Optional election year filter
+ * @returns {Array} Array of closest contest details with winner and runner-up information
+ */
 const getClosestContests = async (req, res) => {
   const { year } = req.query;
   
@@ -944,7 +1160,17 @@ const getClosestContests = async (req, res) => {
   res.json(result.rows);
 };
 
-// Analytics: Turnout-margin correlation
+/**
+ * Analytics: Turnout-Margin Correlation
+ * 
+ * Calculates the correlation between voter turnout and victory margins for each state.
+ * Uses Pearson correlation coefficient to measure the relationship. Higher correlation
+ * suggests that higher turnout is associated with larger victory margins (or vice versa).
+ * 
+ * @route GET /api/analytics/correlation
+ * @param {number} [state] - Optional state ID filter (if not provided, returns all states)
+ * @returns {Array<{state: string, avg_turnout: number, avg_margin: number, data_points: number, correlation: number}>} Array of correlation statistics by state
+ */
 const getCorrelation = async (req, res) => {
   const { state } = req.query;
   
@@ -1001,7 +1227,16 @@ const getCorrelation = async (req, res) => {
   res.json(correlations);
 };
 
-// Analytics: National vs Regional parties vote share over time
+/**
+ * Analytics: National vs Regional Parties Vote Share Over Time
+ * 
+ * Analyzes the vote share trends of National parties versus Regional parties over time.
+ * Classifies parties based on their party_type_tcpd field and calculates vote share
+ * percentages for each category across all election years.
+ * 
+ * @route GET /api/analytics/national-vs-regional
+ * @returns {Array<{year: number, party_type: string, total_votes: number, vote_share_pct: number}>} Array of vote share by party type over time
+ */
 const getNationalVsRegionalVoteShare = async (req, res) => {
   // First, get total votes per year for all parties
   const totalVotesQuery = `
@@ -1060,7 +1295,17 @@ const getNationalVsRegionalVoteShare = async (req, res) => {
   res.json(rowsWithPercentage);
 };
 
-// Analytics: Education level correlation with winning chances
+/**
+ * Analytics: Education Level Correlation with Winning Chances
+ * 
+ * Analyzes the relationship between candidate education levels and their likelihood
+ * of winning elections. Calculates win rates (percentage of candidates who won)
+ * for each education level. Sorted by win rate to show which education levels
+ * are most associated with electoral success.
+ * 
+ * @route GET /api/analytics/education-correlation
+ * @returns {Array<{education: string, total_candidates: number, winners: number, win_rate: number}>} Array of education level statistics sorted by win rate
+ */
 const getEducationCorrelation = async (req, res) => {
   // Get all candidates with education and position data
   const query = `

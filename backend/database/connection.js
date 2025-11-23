@@ -1,19 +1,45 @@
+/**
+ * Database Connection Module
+ * 
+ * This module handles all database connectivity and query execution for the SQLite database.
+ * It provides:
+ * - Automatic database connection and initialization
+ * - Schema creation if database doesn't exist
+ * - PostgreSQL-to-SQLite query syntax conversion
+ * - Error handling and connection status management
+ * 
+ * The module uses better-sqlite3 for synchronous SQLite operations, which is wrapped
+ * in async functions for compatibility with Express route handlers.
+ */
+
 const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
+// Database file path - can be configured via DB_PATH environment variable
+// Defaults to election_data.db in the project root
 const dbPath = process.env.DB_PATH || path.join(__dirname, '../../election_data.db');
 
-// Ensure database directory exists
+// Ensure database directory exists before attempting to create database file
 const dbDir = path.dirname(dbPath);
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
+// Global database connection state
 let db = null;
 let isConnected = false;
 
+/**
+ * Connect to SQLite Database
+ * 
+ * Establishes connection to the SQLite database file. If the database doesn't exist,
+ * it creates a new one. If tables don't exist, it automatically initializes the
+ * schema by reading and executing schema.sql.
+ * 
+ * @returns {boolean} True if connection successful, false otherwise
+ */
 function connect() {
   try {
     console.log('\n🔍 Database Connection Diagnostics:');
@@ -30,16 +56,18 @@ function connect() {
       }
     }
 
-    // Open database with timeout to prevent hanging
+    // Open database connection with timeout to prevent hanging on locked databases
     db = new Database(dbPath, { 
-      verbose: null,
-      timeout: 5000 // 5 second timeout
+      verbose: null,  // Disable verbose logging
+      timeout: 5000   // 5 second timeout for database operations
     });
     
-    // Enable foreign keys
+    // Enable foreign key constraints to maintain referential integrity
+    // This ensures that foreign key relationships are enforced by SQLite
     db.pragma('foreign_keys = ON');
     
-    // Check if tables exist, if not, initialize schema
+    // Check if database tables exist by looking for the 'states' table
+    // If tables don't exist, we need to initialize the schema
     const tablesCheck = db.prepare(`
       SELECT name FROM sqlite_master 
       WHERE type='table' AND name='states'
@@ -53,13 +81,15 @@ function connect() {
         console.log('   ✅ Schema file found');
         const schema = fs.readFileSync(schemaPath, 'utf-8');
         
-        // Better SQL parsing - handle multi-line statements
+        // Parse SQL schema file - handle multi-line statements properly
+        // SQLite requires each statement to be executed separately
         const lines = schema.split('\n');
         let currentStatement = '';
         const statements = [];
 
+        // Parse each line of the schema file
         for (const line of lines) {
-          // Remove comments
+          // Remove SQL comments (everything after --)
           let cleanLine = line;
           const commentIndex = line.indexOf('--');
           if (commentIndex >= 0) {
@@ -71,9 +101,10 @@ function connect() {
             continue;
           }
           
+          // Accumulate lines until we find a semicolon (end of statement)
           currentStatement += cleanLine + '\n';
           
-          // If line ends with semicolon, we have a complete statement
+          // If line ends with semicolon, we have a complete SQL statement
           if (cleanLine.trim().endsWith(';')) {
             const stmt = currentStatement.trim();
             if (stmt.length > 0 && !stmt.startsWith('--')) {
@@ -83,7 +114,8 @@ function connect() {
           }
         }
 
-        // Separate tables and indexes
+        // Separate CREATE TABLE and CREATE INDEX statements
+        // Tables must be created before indexes to avoid foreign key errors
         const tableStatements = [];
         const indexStatements = [];
 
@@ -98,13 +130,14 @@ function connect() {
 
         console.log(`   Found ${statements.length} SQL statements (${tableStatements.length} tables, ${indexStatements.length} indexes)`);
 
-        // Create tables first
+        // Create tables first (indexes depend on tables existing)
         let tableCount = 0;
         for (const stmt of tableStatements) {
           try {
             db.exec(stmt);
             tableCount++;
           } catch (err) {
+            // Ignore errors if table already exists (idempotent operation)
             if (!err.message.includes('already exists') && !err.message.includes('duplicate')) {
               console.error(`   ❌ Error creating table: ${err.message}`);
               console.error(`   Statement: ${stmt.substring(0, 100)}...`);
@@ -112,13 +145,14 @@ function connect() {
           }
         }
 
-        // Then create indexes
+        // Create indexes after tables (indexes reference table columns)
         let indexCount = 0;
         for (const stmt of indexStatements) {
           try {
             db.exec(stmt);
             indexCount++;
           } catch (err) {
+            // Ignore errors if index already exists (idempotent operation)
             if (!err.message.includes('already exists') && !err.message.includes('duplicate')) {
               // Silently ignore if table doesn't exist (shouldn't happen, but just in case)
               if (!err.message.includes('no such table')) {
@@ -167,18 +201,35 @@ function connect() {
   }
 }
 
-// Connect on startup (non-blocking to avoid blocking server startup)
+// Connect to database on module load (non-blocking to avoid blocking server startup)
+// Uses process.nextTick to defer connection until after the current execution completes
 process.nextTick(() => {
   connect();
 });
 
-// Convert PostgreSQL syntax to SQLite
+/**
+ * Convert PostgreSQL Query Syntax to SQLite
+ * 
+ * This function converts PostgreSQL-style queries to SQLite-compatible syntax.
+ * The original codebase was written for PostgreSQL, so this adapter allows
+ * the same queries to work with SQLite.
+ * 
+ * Conversions performed:
+ * - $1, $2 parameter placeholders → ? placeholders
+ * - ILIKE (case-insensitive LIKE) → LIKE (SQLite LIKE is case-insensitive by default)
+ * - COUNT() FILTER (WHERE ...) → SUM(CASE WHEN ... THEN 1 ELSE 0 END)
+ * 
+ * @param {string} sql - PostgreSQL-style SQL query
+ * @param {Array} params - Query parameters array
+ * @returns {Object} Object with converted SQL and parameters
+ */
 function convertToSQLite(sql, params = []) {
   let convertedSql = sql;
   const convertedParams = [];
   let paramIndex = 1;
   
-  // Replace $1, $2, etc. with ?
+  // Convert PostgreSQL parameter placeholders ($1, $2, etc.) to SQLite placeholders (?)
+  // PostgreSQL uses numbered parameters, SQLite uses positional parameters
   convertedSql = convertedSql.replace(/\$\d+/g, (match) => {
     const index = parseInt(match.substring(1)) - 1;
     if (index < params.length) {
@@ -187,24 +238,41 @@ function convertToSQLite(sql, params = []) {
     return '?';
   });
   
-  // Replace ILIKE with LIKE (SQLite LIKE is case-insensitive by default)
+  // Replace ILIKE (PostgreSQL case-insensitive LIKE) with LIKE
+  // SQLite LIKE is case-insensitive by default, so this is a direct replacement
   convertedSql = convertedSql.replace(/ILIKE/gi, 'LIKE');
   
-  // Replace FILTER (WHERE condition) with SUM(CASE WHEN ...)
+  // Replace PostgreSQL FILTER clause with SQLite-compatible CASE expression
+  // COUNT() FILTER (WHERE condition) becomes SUM(CASE WHEN condition THEN 1 ELSE 0 END)
   convertedSql = convertedSql.replace(/COUNT\(\)\s+FILTER\s+\(WHERE\s+([^)]+)\)/gi, (match, condition) => {
     return `SUM(CASE WHEN ${condition} THEN 1 ELSE 0 END)`;
   });
   
-  // Replace FULL OUTER JOIN with UNION of LEFT JOINs (simplified - may need manual fixes for complex queries)
-  // This is a basic replacement; complex queries may need manual adjustment
+  // Note: FULL OUTER JOIN conversion is not implemented here
+  // Complex queries with FULL OUTER JOIN may need manual adjustment
   
   return { sql: convertedSql, params: convertedParams.length > 0 ? convertedParams : params };
 }
 
-// Wrapper function to check connection before queries (async wrapper for compatibility)
+/**
+ * Execute Database Query with Connection Check
+ * 
+ * This is the main query execution function used throughout the application.
+ * It:
+ * - Checks database connection and reconnects if necessary
+ * - Converts PostgreSQL syntax to SQLite
+ * - Executes SELECT queries and returns rows
+ * - Executes INSERT/UPDATE/DELETE queries and returns affected row count
+ * - Handles errors with detailed logging
+ * 
+ * @param {string} sql - SQL query string (PostgreSQL syntax, will be converted)
+ * @param {Array} params - Query parameters array
+ * @returns {Promise<Object>} Promise resolving to {rows: Array} for SELECT or {rowCount: number} for INSERT/UPDATE/DELETE
+ */
 async function queryWithCheck(sql, params = []) {
   return new Promise((resolve, reject) => {
     try {
+      // Check if database is connected, attempt reconnection if not
       if (!isConnected || !db) {
         console.log('🔄 Attempting to reconnect to database...');
         const connected = connect();
@@ -216,23 +284,24 @@ async function queryWithCheck(sql, params = []) {
         }
       }
       
-      // Convert PostgreSQL syntax to SQLite
+      // Convert PostgreSQL query syntax to SQLite-compatible syntax
       const { sql: convertedSql, params: convertedParams } = convertToSQLite(sql, params);
       
-      // Check if it's a SELECT query
+      // Determine query type and execute accordingly
       const trimmedSql = convertedSql.trim().toUpperCase();
       if (trimmedSql.startsWith('SELECT')) {
+        // SELECT queries return data rows
         const stmt = db.prepare(convertedSql);
         const rows = stmt.all(convertedParams);
         resolve({ rows });
       } else {
-        // For INSERT, UPDATE, DELETE
+        // INSERT, UPDATE, DELETE queries return affected row count
         const stmt = db.prepare(convertedSql);
         const result = stmt.run(convertedParams);
         resolve({ 
           rows: [],
-          rowCount: result.changes,
-          lastInsertRowid: result.lastInsertRowid
+          rowCount: result.changes,        // Number of rows affected
+          lastInsertRowid: result.lastInsertRowid  // ID of last inserted row (for INSERT)
         });
       }
     } catch (error) {
@@ -259,14 +328,24 @@ async function queryWithCheck(sql, params = []) {
   });
 }
 
-// Export for compatibility
+/**
+ * Module Exports
+ * 
+ * Exports database connection functions for use throughout the application.
+ * Provides both async (query, queryWithCheck) and sync (prepare) interfaces.
+ */
 module.exports = {
+  // Main query function (async, recommended for route handlers)
   query: queryWithCheck,
   queryWithCheck: queryWithCheck,
+  
+  // Direct prepared statement access (sync, for advanced use cases)
   prepare: (sql) => {
     if (!isConnected || !db) connect();
     return db.prepare(sql);
   },
+  
+  // Close database connection (useful for cleanup or testing)
   close: () => {
     if (db) {
       db.close();

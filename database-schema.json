@@ -1,0 +1,285 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Indian Election Data Database Schema",
+  "description": "Database schema for Indian Lok Sabha Election Data Visualization (1991-2019)",
+  "version": "1.0.0",
+  "database": {
+    "type": "SQLite",
+    "name": "election_data"
+  },
+  "tables": {
+    "states": {
+      "description": "Indian states and union territories",
+      "columns": {
+        "id": {
+          "type": "INTEGER",
+          "primaryKey": true,
+          "description": "Unique identifier"
+        },
+        "name": {
+          "type": "TEXT",
+          "required": true,
+          "unique": true,
+          "description": "State name"
+        }
+      },
+      "relationships": {
+        "constituencies": {
+          "type": "one-to-many",
+          "foreignKey": "constituencies.state_id"
+        }
+      }
+    },
+    "parties": {
+      "description": "Political parties",
+      "columns": {
+        "id": {
+          "type": "INTEGER",
+          "primaryKey": true,
+          "description": "Unique identifier"
+        },
+        "name": {
+          "type": "TEXT",
+          "required": true,
+          "unique": true,
+          "description": "Party name"
+        },
+        "party_type_tcpd": {
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Party type: 'National', 'Regional', or 'State'"
+        }
+      },
+      "relationships": {
+        "results": {
+          "type": "one-to-many",
+          "foreignKey": "results.party_id"
+        }
+      }
+    },
+    "constituencies": {
+      "description": "Parliamentary constituencies (electoral districts)",
+      "columns": {
+        "id": {
+          "type": "INTEGER",
+          "primaryKey": true,
+          "description": "Unique identifier"
+        },
+        "state_id": {
+          "type": "INTEGER",
+          "required": true,
+          "foreignKey": "states.id",
+          "description": "Reference to state"
+        },
+        "name": {
+          "type": "TEXT",
+          "required": true,
+          "description": "Constituency name"
+        },
+        "constituency_no": {
+          "type": "INTEGER",
+          "nullable": true,
+          "description": "Constituency number within state"
+        },
+        "constituency_type": {
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Type: 'General', 'SC', or 'ST'"
+        }
+      },
+      "relationships": {
+        "state": {
+          "type": "many-to-one",
+          "foreignKey": "state_id"
+        },
+        "results": {
+          "type": "one-to-many",
+          "foreignKey": "results.constituency_id"
+        }
+      }
+    },
+    "elections": {
+      "description": "Election events",
+      "columns": {
+        "id": {
+          "type": "INTEGER",
+          "primaryKey": true,
+          "description": "Unique identifier"
+        },
+        "year": {
+          "type": "INTEGER",
+          "required": true,
+          "description": "Election year (e.g., 2019, 2014)"
+        }
+      },
+      "relationships": {
+        "results": {
+          "type": "one-to-many",
+          "foreignKey": "results.election_id"
+        }
+      }
+    },
+    "candidates": {
+      "description": "Election candidates",
+      "columns": {
+        "id": {
+          "type": "INTEGER",
+          "primaryKey": true,
+          "description": "Unique identifier"
+        },
+        "name": {
+          "type": "TEXT",
+          "required": true,
+          "description": "Candidate name"
+        },
+        "sex": {
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Gender: 'M' or 'F'"
+        },
+        "myneta_education": {
+          "type": "TEXT",
+          "nullable": true,
+          "description": "Educational qualification"
+        }
+      },
+      "relationships": {
+        "results": {
+          "type": "one-to-many",
+          "foreignKey": "results.candidate_id"
+        }
+      }
+    },
+    "results": {
+      "description": "Main fact table - election results connecting all dimensions",
+      "columns": {
+        "id": {
+          "type": "INTEGER",
+          "primaryKey": true,
+          "description": "Unique identifier"
+        },
+        "election_id": {
+          "type": "INTEGER",
+          "required": true,
+          "foreignKey": "elections.id",
+          "description": "Reference to election"
+        },
+        "constituency_id": {
+          "type": "INTEGER",
+          "required": true,
+          "foreignKey": "constituencies.id",
+          "description": "Reference to constituency"
+        },
+        "candidate_id": {
+          "type": "INTEGER",
+          "required": true,
+          "foreignKey": "candidates.id",
+          "description": "Reference to candidate"
+        },
+        "party_id": {
+          "type": "INTEGER",
+          "required": true,
+          "foreignKey": "parties.id",
+          "description": "Reference to party"
+        },
+        "position": {
+          "type": "INTEGER",
+          "nullable": true,
+          "description": "Ranking: 1 = winner, 2 = runner-up, etc."
+        },
+        "votes": {
+          "type": "REAL",
+          "nullable": true,
+          "description": "Votes received by candidate"
+        },
+        "vote_share_percentage": {
+          "type": "REAL",
+          "nullable": true,
+          "description": "Vote share percentage (votes / valid_votes * 100)"
+        },
+        "turnout_percentage": {
+          "type": "REAL",
+          "nullable": true,
+          "description": "Voter turnout percentage"
+        },
+        "margin_percentage": {
+          "type": "REAL",
+          "nullable": true,
+          "description": "Victory margin as percentage"
+        }
+      },
+      "relationships": {
+        "election": {
+          "type": "many-to-one",
+          "foreignKey": "election_id"
+        },
+        "constituency": {
+          "type": "many-to-one",
+          "foreignKey": "constituency_id"
+        },
+        "candidate": {
+          "type": "many-to-one",
+          "foreignKey": "candidate_id"
+        },
+        "party": {
+          "type": "many-to-one",
+          "foreignKey": "party_id"
+        }
+      },
+      "indexes": [
+        {
+          "name": "idx_results_election_id",
+          "columns": ["election_id"]
+        },
+        {
+          "name": "idx_results_constituency_id",
+          "columns": ["constituency_id"]
+        },
+        {
+          "name": "idx_results_party_id",
+          "columns": ["party_id"]
+        },
+        {
+          "name": "idx_results_candidate_id",
+          "columns": ["candidate_id"]
+        },
+        {
+          "name": "idx_results_position",
+          "columns": ["position"]
+        },
+        {
+          "name": "idx_results_turnout",
+          "columns": ["turnout_percentage"]
+        },
+        {
+          "name": "idx_results_vote_share",
+          "columns": ["vote_share_percentage"]
+        },
+        {
+          "name": "idx_results_margin",
+          "columns": ["margin_percentage"]
+        }
+      ]
+    }
+  },
+  "additionalIndexes": {
+    "idx_elections_year": {
+      "table": "elections",
+      "columns": ["year"]
+    },
+    "idx_constituencies_state_id": {
+      "table": "constituencies",
+      "columns": ["state_id"]
+    }
+  },
+  "dataConstraints": {
+    "yearRange": {
+      "min": 1991,
+      "max": 2019
+    },
+    "percentageFields": {
+      "range": [0, 100],
+      "fields": ["turnout_percentage", "vote_share_percentage", "margin_percentage"]
+    }
+  }
+}
