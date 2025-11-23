@@ -12,9 +12,11 @@ const GenderTrendChart = () => {
     const party = searchParams.get('party');
     const state = searchParams.get('state');
     const gender = searchParams.get('gender');
-    console.log('GenderTrendChart: Fetching data for party:', party, 'state:', state, 'gender:', gender);
+    const district = searchParams.get('district');
+    const constituency = searchParams.get('constituency');
+    console.log('GenderTrendChart: Fetching data for party:', party, 'state:', state, 'district:', district, 'constituency:', constituency, 'gender:', gender);
     setLoading(true);
-    getGenderTrend(party, state, gender)
+    getGenderTrend(party, state, gender, district, constituency)
       .then((response) => {
         // Handle both array format and { rows: [...] } format
         const data = Array.isArray(response.data) ? response.data : (response.data.rows || []);
@@ -31,7 +33,10 @@ const GenderTrendChart = () => {
             yearMap[item.year][genderKey] = parseFloat(item.percentage) || 0;
           }
         });
-        const chartData = Object.values(yearMap).sort((a, b) => a.year - b.year);
+        // Filter to only show years from 1991 to 2019
+        const chartData = Object.values(yearMap)
+          .filter(item => item.year >= 1991 && item.year <= 2019)
+          .sort((a, b) => a.year - b.year);
         console.log('GenderTrendChart: Transformed data:', chartData);
         setData(chartData);
         setLoading(false);
@@ -40,7 +45,7 @@ const GenderTrendChart = () => {
         console.error('Error fetching gender trend:', error);
         setLoading(false);
       });
-  }, [searchParams.get('party'), searchParams.get('state'), searchParams.get('gender')]); // Re-fetch when filters change
+  }, [searchParams.get('party'), searchParams.get('state'), searchParams.get('district'), searchParams.get('constituency'), searchParams.get('gender')]); // Re-fetch when filters change
 
   if (loading) {
     return (

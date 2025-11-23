@@ -13,14 +13,16 @@ const api = axios.create({
 export const getYears = () => api.get('/years');
 export const getStates = () => api.get('/states');
 export const getParties = () => api.get('/parties');
+export const getConstituencies = (state) => api.get('/constituencies', { params: { state } });
+export const getConstituenciesList = (state, district) => api.get('/constituencies-list', { params: { state, district } });
 export const getElections = (params) => api.get('/elections', { params });
-export const getSeatShare = (year, state, party, gender) => api.get('/seat-share', { params: { year, state, party, gender } });
+export const getSeatShare = (year, state, party, gender, district, constituency) => api.get('/seat-share', { params: { year, state, party, gender, district, constituency } });
 export const getTurnout = (year, state) => api.get('/turnout', { params: { year, state } });
-export const getVoteShare = (year, party, aggregate, state, gender) => api.get('/vote-share', { params: { year, party, aggregate, state, gender } });
-export const getGenderTrend = (party, state, gender) => api.get('/gender-trend', { params: { party, state, gender } });
-export const getMargins = (year, state, limit = 10) => api.get('/margins', { params: { year, state, limit } });
+export const getVoteShare = (year, party, aggregate, state, gender, district, constituency) => api.get('/vote-share', { params: { year, party, aggregate, state, gender, district, constituency } });
+export const getGenderTrend = (party, state, gender, district, constituency) => api.get('/gender-trend', { params: { party, state, gender, district, constituency } });
+export const getMargins = (year, state, limit = 10, district, constituency) => api.get('/margins', { params: { year, state, limit, district, constituency } });
 export const search = (q, type) => api.get('/search', { params: { q, type } });
-export const getKPIs = (year, state, gender) => api.get('/kpis', { params: { year, state, gender } });
+export const getKPIs = (year, state, gender, district, constituency) => api.get('/kpis', { params: { year, state, gender, district, constituency } });
 export const getHighestTurnout = (year) => api.get('/analytics/highest-turnout', { params: { year } });
 export const getSeatChanges = (year1, year2) => api.get('/analytics/seat-changes', { params: { year1, year2 } });
 export const getWomenCandidates = (year = null, state = null) => {

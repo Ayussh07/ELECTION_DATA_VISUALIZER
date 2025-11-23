@@ -11,13 +11,17 @@ const KPICards = () => {
     const year = searchParams.get('year');
     const state = searchParams.get('state');
     const gender = searchParams.get('gender');
-    if (!year) {
-      // Wait for year to be set by Header component
+    const district = searchParams.get('district');
+    const constituency = searchParams.get('constituency');
+    const yearNum = year ? parseInt(year) : null;
+    // Only proceed if year is valid and within 1991-2019 range
+    if (!year || !yearNum || isNaN(yearNum) || yearNum < 1991 || yearNum > 2019) {
+      // Wait for valid year to be set by Header component
       return;
     }
-    console.log('KPICards: Fetching data for year:', year, 'state:', state, 'gender:', gender);
+    console.log('KPICards: Fetching data for year:', year, 'state:', state, 'district:', district, 'constituency:', constituency, 'gender:', gender);
     setLoading(true);
-    getKPIs(year, state, gender)
+    getKPIs(year, state, gender, district, constituency)
       .then((response) => {
         console.log('KPICards: Received data for year', year, 'state', state, 'gender', gender, ':', response.data);
         setKpis(response.data);
@@ -27,7 +31,7 @@ const KPICards = () => {
         console.error('Error fetching KPIs:', error);
         setLoading(false);
       });
-  }, [searchParams.get('year'), searchParams.get('state'), searchParams.get('gender')]); // Re-fetch when filters change
+  }, [searchParams.get('year'), searchParams.get('state'), searchParams.get('district'), searchParams.get('constituency'), searchParams.get('gender')]); // Re-fetch when filters change
 
   if (loading) {
     return (

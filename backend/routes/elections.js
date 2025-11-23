@@ -6,6 +6,8 @@ const {
   getYears,
   getStates,
   getParties,
+  getConstituencies,
+  getConstituenciesList,
   getElections,
   getSeatShare,
   getTurnout,
@@ -27,6 +29,8 @@ const {
 router.get('/years', asyncHandler(getYears));
 router.get('/states', asyncHandler(getStates));
 router.get('/parties', asyncHandler(getParties));
+router.get('/constituencies', asyncHandler(getConstituencies));
+router.get('/constituencies-list', asyncHandler(getConstituenciesList));
 router.get('/elections', validatePagination, asyncHandler(getElections));
 router.get('/seat-share', validateYear, asyncHandler(getSeatShare));
 router.get('/turnout', validateYear, asyncHandler(getTurnout));

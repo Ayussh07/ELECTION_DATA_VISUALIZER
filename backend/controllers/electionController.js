@@ -1,10 +1,31 @@
 const { queryWithCheck } = require('../database/connection');
 const { calculateCorrelation } = require('../database/sqlite-helpers');
 
-// Get all available years
+// Helper: SQL fragment to filter only years with sufficient data (>= 1000 records)
+const validYearsFilter = `AND e.year IN (
+  SELECT e2.year
+  FROM elections e2
+  JOIN results r2 ON e2.id = r2.election_id
+  WHERE e2.year IS NOT NULL
+  GROUP BY e2.year
+  HAVING COUNT(r2.id) >= 1000
+)`;
+
+// Get all available years (only years that have sufficient data in the database)
+// Only return years that have at least 1000 result records (to exclude incomplete/invalid years)
 const getYears = async (req, res) => {
-  const result = await queryWithCheck('SELECT DISTINCT year FROM elections ORDER BY year DESC');
-  const years = result.rows.map(row => row.year);
+  const result = await queryWithCheck(`
+    SELECT e.year, COUNT(r.id) as record_count
+    FROM elections e
+    JOIN results r ON e.id = r.election_id
+    WHERE e.year IS NOT NULL
+    GROUP BY e.year
+    HAVING COUNT(r.id) >= 1000
+    ORDER BY e.year DESC
+  `);
+  const years = result.rows
+    .map(row => row.year)
+    .filter(year => year != null && !isNaN(year) && year > 0);
   res.json(years);
 };
 
@@ -17,6 +38,73 @@ const getStates = async (req, res) => {
 // Get all parties
 const getParties = async (req, res) => {
   const result = await queryWithCheck('SELECT id, name, party_type_tcpd FROM parties ORDER BY name');
+  res.json(result.rows);
+};
+
+// Get constituencies (districts) by state - return unique names only
+const getConstituencies = async (req, res) => {
+  const { state } = req.query;
+  
+  // Get unique constituency names and pick the first ID for each name
+  let query = `
+    SELECT 
+      MIN(c.id) as id,
+      c.name
+    FROM constituencies c
+  `;
+  const params = [];
+  
+  if (state) {
+    query += ' WHERE c.state_id = $1';
+    params.push(parseInt(state));
+  }
+  
+  query += ' GROUP BY c.name ORDER BY c.name';
+  
+  const result = await queryWithCheck(query, params);
+  res.json(result.rows);
+};
+
+// Get individual constituencies (not grouped) by state and/or district
+const getConstituenciesList = async (req, res) => {
+  const { state, district } = req.query;
+  
+  let query = `
+    SELECT 
+      c.id,
+      c.name,
+      c.constituency_no,
+      c.constituency_type
+    FROM constituencies c
+  `;
+  const params = [];
+  let paramCount = 1;
+  let whereClause = '';
+  
+  if (state) {
+    whereClause += ` WHERE c.state_id = $${paramCount}`;
+    params.push(parseInt(state));
+    paramCount++;
+  }
+  
+  if (district) {
+    // If district is provided, get the district name first
+    const districtQuery = await queryWithCheck('SELECT name FROM constituencies WHERE id = $1', [parseInt(district)]);
+    if (districtQuery.rows.length > 0) {
+      const districtName = districtQuery.rows[0].name;
+      if (whereClause) {
+        whereClause += ` AND c.name = $${paramCount}`;
+      } else {
+        whereClause += ` WHERE c.name = $${paramCount}`;
+      }
+      params.push(districtName);
+      paramCount++;
+    }
+  }
+  
+  query += whereClause + ' ORDER BY c.name, c.constituency_no';
+  
+  const result = await queryWithCheck(query, params);
   res.json(result.rows);
 };
 
@@ -43,7 +131,7 @@ const getElections = async (req, res) => {
     JOIN states s ON c.state_id = s.id
     JOIN parties p ON r.party_id = p.id
     JOIN candidates cand ON r.candidate_id = cand.id
-    WHERE 1=1
+    WHERE 1=1 ${validYearsFilter}
   `;
   
   const params = [];
@@ -82,9 +170,18 @@ const getElections = async (req, res) => {
 
 // Get seat share by party for a year
 const getSeatShare = async (req, res) => {
-  const { year, state, party, gender } = req.query;
+  const { year, state, party, gender, district, constituency } = req.query;
   if (!year) {
     return res.status(400).json({ error: 'Year parameter is required' });
+  }
+
+  // If district is provided, get the district name first
+  let districtName = null;
+  if (district) {
+    const districtQuery = await queryWithCheck('SELECT name FROM constituencies WHERE id = $1', [parseInt(district)]);
+    if (districtQuery.rows.length > 0) {
+      districtName = districtQuery.rows[0].name;
+    }
   }
 
   let query = `
@@ -96,7 +193,7 @@ const getSeatShare = async (req, res) => {
     JOIN parties p ON r.party_id = p.id
     JOIN constituencies c ON r.constituency_id = c.id
     JOIN candidates cand ON r.candidate_id = cand.id
-    WHERE e.year = $1 AND r.position = 1
+    WHERE e.year = $1 ${validYearsFilter} AND r.position = 1
   `;
   
   const params = [parseInt(year)];
@@ -105,6 +202,20 @@ const getSeatShare = async (req, res) => {
   if (state) {
     query += ` AND c.state_id = $${paramCount}`;
     params.push(parseInt(state));
+    paramCount++;
+  }
+  
+  if (districtName) {
+    // Filter by district name to include all constituencies with that name
+    query += ` AND c.name = $${paramCount}`;
+    params.push(districtName);
+    paramCount++;
+  }
+  
+  if (constituency) {
+    // Filter by specific constituency ID
+    query += ` AND c.id = $${paramCount}`;
+    params.push(parseInt(constituency));
     paramCount++;
   }
   
@@ -123,7 +234,87 @@ const getSeatShare = async (req, res) => {
   query += ` GROUP BY p.name ORDER BY seats DESC`;
 
   const result = await queryWithCheck(query, params);
-  res.json(result.rows);
+  
+  // Get winner names grouped by district for each party
+  const rowsWithWinners = await Promise.all(
+    result.rows.map(async (row) => {
+      let winnerQuery = `
+        SELECT 
+          c.id as constituency_id,
+          c.name as district_name,
+          c.constituency_no,
+          cand.name as winner_name,
+          cand.id as candidate_id
+        FROM results r
+        JOIN elections e ON r.election_id = e.id
+        JOIN parties p ON r.party_id = p.id
+        JOIN constituencies c ON r.constituency_id = c.id
+        JOIN candidates cand ON r.candidate_id = cand.id
+        WHERE e.year = $1 ${validYearsFilter} AND r.position = 1 AND p.name = $2
+      `;
+      const winnerParams = [parseInt(year), row.party];
+      let winnerParamCount = 3;
+      
+      if (state) {
+        winnerQuery += ` AND c.state_id = $${winnerParamCount}`;
+        winnerParams.push(parseInt(state));
+        winnerParamCount++;
+      }
+      
+      if (districtName) {
+        winnerQuery += ` AND c.name = $${winnerParamCount}`;
+        winnerParams.push(districtName);
+        winnerParamCount++;
+      }
+      
+      if (constituency) {
+        winnerQuery += ` AND c.id = $${winnerParamCount}`;
+        winnerParams.push(parseInt(constituency));
+        winnerParamCount++;
+      }
+      
+      winnerQuery += ` ORDER BY c.name, c.constituency_no, cand.name`;
+      
+      const winnerResult = await queryWithCheck(winnerQuery, winnerParams);
+      
+      // Group winners by district name, but include all winners from all constituencies with that name
+      // Use a Set with unique keys to avoid true duplicates (same constituency + same candidate)
+      // but allow all winners from different constituencies even if they have the same name
+      const districtMap = {};
+      const seenWinners = new Set(); // Track unique constituency_id + candidate_id combinations
+      
+      winnerResult.rows.forEach(w => {
+        const districtKey = w.district_name;
+        const uniqueKey = `${w.constituency_id}_${w.candidate_id}`;
+        
+        // Only skip if we've seen this exact winner from this exact constituency
+        if (seenWinners.has(uniqueKey)) {
+          return;
+        }
+        seenWinners.add(uniqueKey);
+        
+        if (!districtMap[districtKey]) {
+          districtMap[districtKey] = [];
+        }
+        
+        // Add all winners - don't filter by name alone since different constituencies can have winners with same name
+        districtMap[districtKey].push(w.winner_name);
+      });
+      
+      // Format winners grouped by district - include all winners
+      const winnersByDistrict = Object.keys(districtMap).map(districtName => ({
+        district: districtName,
+        winners: districtMap[districtName] // Already an array of names
+      }));
+      
+      return {
+        ...row,
+        winnersByDistrict: winnersByDistrict
+      };
+    })
+  );
+  
+  res.json(rowsWithWinners);
 };
 
 // Get turnout by state for a year
@@ -141,7 +332,7 @@ const getTurnout = async (req, res) => {
     JOIN elections e ON r.election_id = e.id
     JOIN constituencies c ON r.constituency_id = c.id
     JOIN states s ON c.state_id = s.id
-    WHERE e.year = $1 AND r.turnout_percentage IS NOT NULL
+    WHERE e.year = $1 ${validYearsFilter} AND r.turnout_percentage IS NOT NULL
   `;
   
   const params = [parseInt(year)];
@@ -166,16 +357,37 @@ const getVoteShare = async (req, res) => {
 
   // If aggregate=true, return vote share by party only (for charts)
   if (aggregate === 'true' || aggregate === '1') {
-    const { state: stateFilter, gender: genderFilter } = req.query;
+    const { state: stateFilter, gender: genderFilter, district: districtFilter, constituency: constituencyFilter } = req.query;
+    
+    // If district is provided, get the district name first
+    let districtName = null;
+    if (districtFilter) {
+      const districtQuery = await queryWithCheck('SELECT name FROM constituencies WHERE id = $1', [parseInt(districtFilter)]);
+      if (districtQuery.rows.length > 0) {
+        districtName = districtQuery.rows[0].name;
+      }
+    }
     
     // Build WHERE clause
-    let whereClause = `WHERE e.year = $1 AND r.votes IS NOT NULL`;
+    let whereClause = `WHERE e.year = $1 ${validYearsFilter} AND r.votes IS NOT NULL`;
     const params = [parseInt(year)];
     let paramCount = 2;
     
     if (stateFilter) {
       whereClause += ` AND c.state_id = $${paramCount}`;
       params.push(parseInt(stateFilter));
+      paramCount++;
+    }
+    
+    if (districtName) {
+      whereClause += ` AND c.name = $${paramCount}`;
+      params.push(districtName);
+      paramCount++;
+    }
+    
+    if (constituencyFilter) {
+      whereClause += ` AND c.id = $${paramCount}`;
+      params.push(parseInt(constituencyFilter));
       paramCount++;
     }
     
@@ -238,7 +450,7 @@ const getVoteShare = async (req, res) => {
     JOIN constituencies c ON r.constituency_id = c.id
     JOIN states s ON c.state_id = s.id
     JOIN parties p ON r.party_id = p.id
-    WHERE e.year = $1
+    WHERE e.year = $1 ${validYearsFilter}
   `;
   
   const params = [parseInt(year)];
@@ -266,7 +478,7 @@ const getVoteShareByParty = async (req, res) => {
     `SELECT SUM(r.votes) as total_votes
      FROM results r
      JOIN elections e ON r.election_id = e.id
-     WHERE e.year = $1 AND r.votes IS NOT NULL`,
+     WHERE e.year = $1 ${validYearsFilter} AND r.votes IS NOT NULL`,
     [parseInt(year)]
   );
   
@@ -281,7 +493,7 @@ const getVoteShareByParty = async (req, res) => {
     FROM results r
     JOIN elections e ON r.election_id = e.id
     JOIN parties p ON r.party_id = p.id
-    WHERE e.year = $1 AND r.votes IS NOT NULL
+    WHERE e.year = $1 ${validYearsFilter} AND r.votes IS NOT NULL
     GROUP BY p.name
     ORDER BY total_votes DESC`,
     [totalVotes, parseInt(year)]
@@ -292,7 +504,7 @@ const getVoteShareByParty = async (req, res) => {
 
 // Get gender representation trends
 const getGenderTrend = async (req, res) => {
-  const { party, state, gender } = req.query;
+  const { party, state, gender, district } = req.query;
   
   // First get counts by year and gender
   let query = `
@@ -306,7 +518,7 @@ const getGenderTrend = async (req, res) => {
     JOIN constituencies c ON r.constituency_id = c.id
     JOIN states s ON c.state_id = s.id
     JOIN parties p ON r.party_id = p.id
-    WHERE cand.sex IS NOT NULL
+    WHERE cand.sex IS NOT NULL ${validYearsFilter}
   `;
   
   const params = [];
@@ -322,6 +534,18 @@ const getGenderTrend = async (req, res) => {
     query += ` AND s.id = $${paramCount}`;
     params.push(parseInt(state));
     paramCount++;
+  }
+  
+  if (district) {
+    // Filter by district name (since we group by name in the dropdown)
+    // First get the district name from the ID
+    const districtQuery = await queryWithCheck('SELECT name FROM constituencies WHERE id = $1', [parseInt(district)]);
+    if (districtQuery.rows.length > 0) {
+      const districtName = districtQuery.rows[0].name;
+      query += ` AND c.name = $${paramCount}`;
+      params.push(districtName);
+      paramCount++;
+    }
   }
   
   if (gender) {
@@ -356,7 +580,16 @@ const getGenderTrend = async (req, res) => {
 
 // Get narrowest victories
 const getMargins = async (req, res) => {
-  const { year, state, limit = 10 } = req.query;
+  const { year, state, limit = 10, district, constituency } = req.query;
+  
+  // If district is provided, get the district name first
+  let districtName = null;
+  if (district) {
+    const districtQuery = await queryWithCheck('SELECT name FROM constituencies WHERE id = $1', [parseInt(district)]);
+    if (districtQuery.rows.length > 0) {
+      districtName = districtQuery.rows[0].name;
+    }
+  }
   
   let query = `
     SELECT 
@@ -380,7 +613,7 @@ const getMargins = async (req, res) => {
     JOIN results r2 ON r1.constituency_id = r2.constituency_id AND r1.election_id = r2.election_id
     JOIN parties p2 ON r2.party_id = p2.id
     JOIN candidates cand2 ON r2.candidate_id = cand2.id
-    WHERE r1.position = 1 AND r2.position = 2
+    WHERE r1.position = 1 AND r2.position = 2 ${validYearsFilter}
   `;
   
   const params = [];
@@ -397,7 +630,19 @@ const getMargins = async (req, res) => {
     params.push(parseInt(state));
     paramCount++;
   }
-
+  
+  if (districtName) {
+    query += ` AND c.name = $${paramCount}`;
+    params.push(districtName);
+    paramCount++;
+  }
+  
+  if (constituency) {
+    query += ` AND c.id = $${paramCount}`;
+    params.push(parseInt(constituency));
+    paramCount++;
+  }
+  
   query += ` ORDER BY r1.margin_percentage ASC LIMIT $${paramCount}`;
   params.push(parseInt(limit));
 
@@ -446,19 +691,40 @@ const search = async (req, res) => {
 
 // Get key performance indicators
 const getKPIs = async (req, res) => {
-  const { year, state, gender } = req.query;
+  const { year, state, gender, district, constituency } = req.query;
   if (!year) {
     return res.status(400).json({ error: 'Year parameter is required' });
   }
 
+  // If district is provided, get the district name first
+  let districtName = null;
+  if (district) {
+    const districtQuery = await queryWithCheck('SELECT name FROM constituencies WHERE id = $1', [parseInt(district)]);
+    if (districtQuery.rows.length > 0) {
+      districtName = districtQuery.rows[0].name;
+    }
+  }
+
   // Build WHERE clause for state and gender filter
-  let whereClause = `WHERE e.year = $1`;
+  let whereClause = `WHERE e.year = $1 ${validYearsFilter}`;
   const baseParams = [parseInt(year)];
   let paramCount = 2;
   
   if (state) {
     whereClause += ` AND c.state_id = $${paramCount}`;
     baseParams.push(parseInt(state));
+    paramCount++;
+  }
+  
+  if (districtName) {
+    whereClause += ` AND c.name = $${paramCount}`;
+    baseParams.push(districtName);
+    paramCount++;
+  }
+  
+  if (constituency) {
+    whereClause += ` AND c.id = $${paramCount}`;
+    baseParams.push(parseInt(constituency));
     paramCount++;
   }
   
@@ -524,7 +790,7 @@ const getHighestTurnout = async (req, res) => {
     JOIN elections e ON r.election_id = e.id
     JOIN constituencies c ON r.constituency_id = c.id
     JOIN states s ON c.state_id = s.id
-    WHERE e.year = $1 AND r.turnout_percentage IS NOT NULL
+    WHERE e.year = $1 ${validYearsFilter} AND r.turnout_percentage IS NOT NULL
     GROUP BY s.name
     ORDER BY avg_turnout DESC
     LIMIT 1`,
@@ -553,7 +819,7 @@ const getSeatChanges = async (req, res) => {
       FROM results r
       JOIN elections e ON r.election_id = e.id
       JOIN parties p ON r.party_id = p.id
-      WHERE e.year = $1 AND r.position = 1
+      WHERE e.year = $1 ${validYearsFilter} AND r.position = 1
       GROUP BY p.name
     ) y1
     LEFT JOIN (
@@ -561,7 +827,7 @@ const getSeatChanges = async (req, res) => {
       FROM results r
       JOIN elections e ON r.election_id = e.id
       JOIN parties p ON r.party_id = p.id
-      WHERE e.year = $2 AND r.position = 1
+      WHERE e.year = $2 ${validYearsFilter} AND r.position = 1
       GROUP BY p.name
     ) y2 ON y1.party = y2.party
     UNION
@@ -575,7 +841,7 @@ const getSeatChanges = async (req, res) => {
       FROM results r
       JOIN elections e ON r.election_id = e.id
       JOIN parties p ON r.party_id = p.id
-      WHERE e.year = $2 AND r.position = 1
+      WHERE e.year = $2 ${validYearsFilter} AND r.position = 1
       GROUP BY p.name
     ) y2
     LEFT JOIN (
@@ -583,7 +849,7 @@ const getSeatChanges = async (req, res) => {
       FROM results r
       JOIN elections e ON r.election_id = e.id
       JOIN parties p ON r.party_id = p.id
-      WHERE e.year = $1 AND r.position = 1
+      WHERE e.year = $1 ${validYearsFilter} AND r.position = 1
       GROUP BY p.name
     ) y1 ON y2.party = y1.party
     WHERE y1.party IS NULL
@@ -610,7 +876,7 @@ const getWomenCandidates = async (req, res) => {
     JOIN candidates cand ON r.candidate_id = cand.id
     JOIN constituencies c ON r.constituency_id = c.id
     JOIN states s ON c.state_id = s.id
-    WHERE cand.sex IS NOT NULL AND e.year >= 1991 AND e.year <= 2019
+    WHERE cand.sex IS NOT NULL ${validYearsFilter}
   `;
   
   const params = [];
@@ -660,7 +926,7 @@ const getClosestContests = async (req, res) => {
     JOIN results r2 ON r1.constituency_id = r2.constituency_id AND r1.election_id = r2.election_id
     JOIN parties p2 ON r2.party_id = p2.id
     JOIN candidates cand2 ON r2.candidate_id = cand2.id
-    WHERE r1.position = 1 AND r2.position = 2 AND r1.margin_percentage IS NOT NULL
+    WHERE r1.position = 1 AND r2.position = 2 AND r1.margin_percentage IS NOT NULL ${validYearsFilter}
   `;
   
   const params = [];
@@ -737,14 +1003,14 @@ const getCorrelation = async (req, res) => {
 
 // Analytics: National vs Regional parties vote share over time
 const getNationalVsRegionalVoteShare = async (req, res) => {
-  // First, get total votes per year for all parties (filtered to 1991-2019)
+  // First, get total votes per year for all parties
   const totalVotesQuery = `
     SELECT 
       e.year,
       SUM(r.votes) as total_votes
     FROM results r
     JOIN elections e ON r.election_id = e.id
-    WHERE r.votes IS NOT NULL AND e.year >= 1991 AND e.year <= 2019
+    WHERE r.votes IS NOT NULL AND r.votes > 0 ${validYearsFilter}
     GROUP BY e.year
   `;
   
@@ -754,20 +1020,20 @@ const getNationalVsRegionalVoteShare = async (req, res) => {
     yearTotals[row.year] = parseFloat(row.total_votes) || 0;
   });
 
-  // Then get votes by party type (filtered to 1991-2019)
+  // Then get votes by party type - only include parties with valid party_type_tcpd
   const query = `
     SELECT 
       e.year,
       CASE 
-        WHEN p.party_type_tcpd LIKE '%National%' OR UPPER(p.party_type_tcpd) LIKE '%NATIONAL%' THEN 'National'
-        WHEN p.party_type_tcpd LIKE '%Regional%' OR UPPER(p.party_type_tcpd) LIKE '%REGIONAL%' THEN 'Regional'
+        WHEN p.party_type_tcpd IS NOT NULL AND (p.party_type_tcpd LIKE '%National%' OR UPPER(p.party_type_tcpd) LIKE '%NATIONAL%') THEN 'National'
+        WHEN p.party_type_tcpd IS NOT NULL AND (p.party_type_tcpd LIKE '%Regional%' OR UPPER(p.party_type_tcpd) LIKE '%REGIONAL%') THEN 'Regional'
         ELSE 'Other'
       END as party_type,
       SUM(r.votes) as total_votes
     FROM results r
     JOIN elections e ON r.election_id = e.id
     JOIN parties p ON r.party_id = p.id
-    WHERE r.votes IS NOT NULL AND e.year >= 1991 AND e.year <= 2019
+    WHERE r.votes IS NOT NULL AND r.votes > 0 ${validYearsFilter}
     GROUP BY e.year, party_type
     ORDER BY e.year, party_type
   `;
@@ -784,12 +1050,19 @@ const getNationalVsRegionalVoteShare = async (req, res) => {
       : 0
   }));
 
+  // Debug logging
+  if (rowsWithPercentage.length === 0) {
+    console.log('⚠️  getNationalVsRegionalVoteShare: No data returned');
+    console.log('   Total votes query returned:', totalVotesResult.rows.length, 'years');
+    console.log('   Party type query returned:', result.rows.length, 'rows');
+  }
+
   res.json(rowsWithPercentage);
 };
 
 // Analytics: Education level correlation with winning chances
 const getEducationCorrelation = async (req, res) => {
-  // Get all candidates with education and position data (filtered to 1991-2019)
+  // Get all candidates with education and position data
   const query = `
     SELECT 
       cand.myneta_education as education,
@@ -800,8 +1073,9 @@ const getEducationCorrelation = async (req, res) => {
     JOIN elections e ON r.election_id = e.id
     WHERE cand.myneta_education IS NOT NULL 
       AND cand.myneta_education != ''
+      AND TRIM(cand.myneta_education) != ''
       AND r.position IS NOT NULL
-      AND e.year >= 1991 AND e.year <= 2019
+      ${validYearsFilter}
   `;
 
   const result = await queryWithCheck(query);
@@ -809,7 +1083,9 @@ const getEducationCorrelation = async (req, res) => {
   // Group by education level
   const educationStats = {};
   result.rows.forEach(row => {
-    const education = row.education || 'Unknown';
+    const education = (row.education || 'Unknown').trim();
+    if (!education || education === '') return; // Skip empty education
+    
     if (!educationStats[education]) {
       educationStats[education] = {
         education: education,
@@ -825,15 +1101,25 @@ const getEducationCorrelation = async (req, res) => {
   });
 
   // Calculate win rates
-  const statsArray = Object.values(educationStats).map(stat => ({
-    ...stat,
-    win_rate: stat.total_candidates > 0 
-      ? (stat.winners * 100.0 / stat.total_candidates) 
-      : 0
-  }));
+  const statsArray = Object.values(educationStats)
+    .filter(stat => stat.total_candidates > 0) // Only include education levels with candidates
+    .map(stat => ({
+      ...stat,
+      win_rate: stat.total_candidates > 0 
+        ? (stat.winners * 100.0 / stat.total_candidates) 
+        : 0
+    }));
 
   // Sort by win rate descending
   statsArray.sort((a, b) => b.win_rate - a.win_rate);
+
+  // Debug logging
+  if (statsArray.length === 0) {
+    console.log('⚠️  getEducationCorrelation: No data returned');
+    console.log('   Query returned:', result.rows.length, 'rows');
+  } else {
+    console.log(`✅ getEducationCorrelation: Found ${statsArray.length} education levels`);
+  }
 
   res.json(statsArray);
 };
@@ -842,6 +1128,8 @@ module.exports = {
   getYears,
   getStates,
   getParties,
+  getConstituencies,
+  getConstituenciesList,
   getElections,
   getSeatShare,
   getTurnout,

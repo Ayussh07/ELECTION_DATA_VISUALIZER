@@ -1,510 +1,165 @@
 # API Contract Documentation
 
 ## Base URL
-
 ```
 http://localhost:5000/api
 ```
 
-## Endpoints
-
-### 1. Get Available Years
-
-**GET** `/years`
-
-Returns all available election years.
-
-**Response:**
-```json
-[2019, 2014, 2009, 2004, ...]
-```
-
----
-
-### 2. Get All States
-
-**GET** `/states`
-
-Returns all states in the database.
-
-**Response:**
-```json
-[
-  {
-    "id": 1,
-    "name": "Andhra Pradesh"
-  },
-  {
-    "id": 2,
-    "name": "Arunachal Pradesh"
-  }
-]
-```
-
----
-
-### 3. Get All Parties
-
-**GET** `/parties`
-
-Returns all political parties.
-
-**Response:**
-```json
-[
-  {
-    "id": 1,
-    "name": "BJP",
-    "party_type_tcpd": "National Party"
-  },
-  {
-    "id": 2,
-    "name": "INC",
-    "party_type_tcpd": "National Party"
-  }
-]
-```
-
----
-
-### 4. Get Election Results
-
-**GET** `/elections`
-
-Get election results with optional filters.
-
-**Query Parameters:**
-- `year` (integer, optional): Filter by election year
-- `state` (integer, optional): Filter by state ID
-- `party` (integer, optional): Filter by party ID
-- `constituency` (string, optional): Filter by constituency name (partial match)
-- `limit` (integer, optional, default: 100): Number of results to return
-- `offset` (integer, optional, default: 0): Pagination offset
-
-**Example Request:**
-```
-GET /api/elections?year=2019&state=1&limit=10&offset=0
-```
-
-**Response:**
-```json
-[
-  {
-    "year": 2019,
-    "state_name": "Andhra Pradesh",
-    "constituency_name": "Araku",
-    "party_name": "YSRCP",
-    "candidate_name": "Goddeti Madhavi",
-    "gender": "F",
-    "votes": 456789,
-    "vote_share_percentage": 52.34,
-    "turnout_percentage": 78.45,
-    "margin_percentage": 5.67,
-    "position": 1
-  }
-]
-```
-
----
-
-### 5. Get Seat Share
-
-**GET** `/seat-share`
-
-Get seat share by party for a specific year.
-
-**Query Parameters:**
-- `year` (integer, required): Election year
-
-**Example Request:**
-```
-GET /api/seat-share?year=2019
-```
-
-**Response:**
-```json
-[
-  {
-    "party": "BJP",
-    "seats": 303
-  },
-  {
-    "party": "INC",
-    "seats": 52
-  }
-]
-```
-
----
-
-### 6. Get Turnout by State
-
-**GET** `/turnout`
-
-Get average turnout percentage by state for a specific year.
-
-**Query Parameters:**
-- `year` (integer, required): Election year
-
-**Example Request:**
-```
-GET /api/turnout?year=2019
-```
-
-**Response:**
-```json
-[
-  {
-    "state": "Lakshadweep",
-    "turnout_pct": 85.23
-  },
-  {
-    "state": "West Bengal",
-    "turnout_pct": 82.15
-  }
-]
-```
-
----
-
-### 7. Get Vote Share
-
-**GET** `/vote-share`
-
-Get vote share statistics by party and state.
-
-**Query Parameters:**
-- `year` (integer, required): Election year
-- `party` (integer, optional): Filter by party ID
-
-**Example Request:**
-```
-GET /api/vote-share?year=2019&party=1
-```
-
-**Response:**
-```json
-[
-  {
-    "state": "Uttar Pradesh",
-    "party": "BJP",
-    "total_votes": 12345678,
-    "avg_vote_share": 49.56
-  }
-]
-```
-
----
-
-### 8. Get Gender Trend
-
-**GET** `/gender-trend`
-
-Get gender representation trends over years.
-
-**Query Parameters:**
-- `party` (integer, optional): Filter by party ID
-- `state` (integer, optional): Filter by state ID
-
-**Example Request:**
-```
-GET /api/gender-trend?party=1
-```
-
-**Response:**
-```json
-[
-  {
-    "year": 2019,
-    "gender": "M",
-    "count": 8500,
-    "percentage": 92.5
-  },
-  {
-    "year": 2019,
-    "gender": "F",
-    "count": 700,
-    "percentage": 7.5
-  }
-]
-```
-
----
-
-### 9. Get Narrowest Victories
-
-**GET** `/margins`
-
-Get elections with the narrowest victory margins.
-
-**Query Parameters:**
-- `year` (integer, optional): Filter by election year
-- `state` (integer, optional): Filter by state ID
-- `limit` (integer, optional, default: 10): Number of results
-
-**Example Request:**
-```
-GET /api/margins?year=2019&limit=10
-```
-
-**Response:**
-```json
-[
-  {
-    "year": 2019,
-    "state_name": "Karnataka",
-    "constituency_name": "Chikkaballapur",
-    "winner_party": "INC",
-    "winner": "M. Veerappa Moily",
-    "winner_votes": 123456,
-    "runner_up_party": "BJP",
-    "runner_up": "B. N. Bache Gowda",
-    "runner_up_votes": 123450,
-    "margin": 6,
-    "margin_percentage": 0.005
-  }
-]
-```
-
----
-
-### 10. Search
-
-**GET** `/search`
-
-Search for candidates, constituencies, or parties.
-
-**Query Parameters:**
-- `q` (string, required): Search query
-- `type` (string, optional): Filter type - 'candidate', 'constituency', 'party', or 'all' (default)
-
-**Example Request:**
-```
-GET /api/search?q=Modi&type=candidate
-```
-
-**Response:**
-```json
-{
-  "candidates": [
-    {
-      "name": "Narendra Modi",
-      "sex": "M"
-    }
-  ],
-  "constituencies": [],
-  "parties": []
-}
-```
-
----
-
-### 11. Get Key Performance Indicators
-
-**GET** `/kpis`
-
-Get key performance indicators for a specific year.
-
-**Query Parameters:**
-- `year` (integer, required): Election year
-
-**Example Request:**
-```
-GET /api/kpis?year=2019
-```
-
-**Response:**
-```json
-{
-  "total_seats": 543,
-  "overall_turnout": 67.4,
-  "women_candidates_pct": 9.2
-}
-```
+## Basic Endpoints
+
+### Get Available Years
+**GET** `/years`  
+Returns years with >= 1000 records (1991-2019).  
+**Response:** `[2019, 2014, 2009, 2004, ...]`
+
+### Get All States
+**GET** `/states`  
+**Response:** `[{"id": 1, "name": "Andhra Pradesh"}, ...]`
+
+### Get All Parties
+**GET** `/parties`  
+**Response:** `[{"id": 1, "name": "BJP", "party_type_tcpd": "National Party"}, ...]`
+
+### Get Constituencies (Districts)
+**GET** `/constituencies?state={id}`  
+Returns unique constituency names grouped by name.  
+**Response:** `[{"id": 1, "name": "Araku"}, ...]`
+
+### Get Constituencies List
+**GET** `/constituencies-list?state={id}&district={id}`  
+Returns individual constituencies (not grouped).  
+**Response:** `[{"id": 1, "name": "Araku", "constituency_no": 1, "constituency_type": "ST"}, ...]`
+
+### Get Election Results
+**GET** `/elections?year={year}&state={id}&party={id}&constituency={name}&limit={n}&offset={n}`  
+**Response:** Array of election result objects with candidate, party, votes, turnout, margin data.
 
 ---
 
 ## Analytics Endpoints
 
-### 12. Highest Turnout State
-
-**GET** `/analytics/highest-turnout`
-
-Get the state with highest turnout for a specific year.
-
-**Query Parameters:**
-- `year` (integer, required): Election year
-
+### Get Seat Share
+**GET** `/seat-share?year={year}&state={id}&party={id}&gender={M|F}&district={id}&constituency={id}`  
+Returns seat share by party with winners grouped by district.  
 **Response:**
 ```json
-{
-  "state": "Lakshadweep",
-  "avg_turnout": 85.23
-}
+[{
+  "party": "BJP",
+  "seats": 303,
+  "winnersByDistrict": [{
+    "district": "Araku",
+    "winners": ["Candidate 1", "Candidate 2"]
+  }]
+}]
 ```
+
+### Get Turnout
+**GET** `/turnout?year={year}&state={id}`  
+Returns average turnout by state.  
+**Response:** `[{"state": "Lakshadweep", "turnout_pct": 85.23}, ...]`
+
+### Get Vote Share
+**GET** `/vote-share?year={year}&aggregate={true|false}&state={id}&party={id}&gender={M|F}&district={id}&constituency={id}`  
+- `aggregate=true`: Returns aggregated vote share by party (for charts)  
+- `aggregate=false` or omitted: Returns vote share by state and party  
+**Response (aggregated):** `[{"party": "BJP", "total_votes": 229076879, "vote_share_pct": 37.36}, ...]`  
+**Response (by state):** `[{"state": "UP", "party": "BJP", "total_votes": 12345678, "avg_vote_share": 49.56}, ...]`
+
+### Get Gender Trend
+**GET** `/gender-trend?party={id}&state={id}&gender={M|F}&district={id}&constituency={id}`  
+Returns gender representation trends over years.  
+**Response:** `[{"year": 2019, "gender": "M", "count": 8500, "percentage": 92.5}, ...]`
+
+### Get Narrowest Victories
+**GET** `/margins?year={year}&state={id}&limit={n}&district={id}&constituency={id}`  
+Returns constituencies with narrowest victory margins.  
+**Response:** `[{"year": 2019, "state_name": "Karnataka", "constituency_name": "Chikkaballapur", "winner": "M. Veerappa Moily", "winner_party": "INC", "margin_percentage": 0.005}, ...]`
+
+### Get Key Performance Indicators
+**GET** `/kpis?year={year}&state={id}&gender={M|F}&district={id}&constituency={id}`  
+**Response:** `{"total_seats": 543, "overall_turnout": 67.4, "women_candidates_pct": 9.2}`
+
+### Search
+**GET** `/search?q={query}&type={candidate|party|constituency}`  
+**Response:** `{"candidates": [...], "constituencies": [...], "parties": [...]}`
 
 ---
 
-### 13. Seat Changes
+## Advanced Analytics
 
-**GET** `/analytics/seat-changes`
+### Highest Turnout State
+**GET** `/analytics/highest-turnout?year={year}`  
+**Response:** `{"state": "Lakshadweep", "avg_turnout": 85.23}`
 
-Get party seat gains/losses between two election years.
+### Seat Changes
+**GET** `/analytics/seat-changes?year1={year}&year2={year}`  
+Returns party seat gains/losses between two elections.  
+**Response:** `[{"party": "BJP", "year1_seats": 282, "year2_seats": 303, "change": 21}, ...]`
 
-**Query Parameters:**
-- `year1` (integer, required): First election year
-- `year2` (integer, required): Second election year
+### Women Candidates
+**GET** `/analytics/women-candidates?year={year}`  
+Year parameter is optional. Returns percentage across all elections if omitted.  
+**Response:** `{"total_women": 4500, "total_candidates": 85000, "percentage": 5.29}`
 
-**Example Request:**
-```
-GET /api/analytics/seat-changes?year1=2014&year2=2019
-```
+### Closest Contests
+**GET** `/analytics/closest-contests?year={year}&limit={n}`  
+**Response:** Array of closest election contests with winner/runner-up details.
 
-**Response:**
-```json
-[
-  {
-    "party": "BJP",
-    "year1_seats": 282,
-    "year2_seats": 303,
-    "change": 21
-  },
-  {
-    "party": "INC",
-    "year1_seats": 44,
-    "year2_seats": 52,
-    "change": 8
-  }
-]
-```
+### Turnout-Margin Correlation
+**GET** `/analytics/correlation?state={id}`  
+Returns correlation between turnout and margin percentage by state.  
+**Response:** `[{"state": "Kerala", "avg_turnout": 77.45, "avg_margin": 12.34, "correlation": -0.23}, ...]`
 
----
+### National vs Regional Vote Share
+**GET** `/analytics/national-vs-regional`  
+Returns vote share trends over time by party type.  
+**Response:** `[{"year": 1991, "party_type": "National", "total_votes": 150000000, "vote_share_pct": 65.5}, ...]`
 
-### 14. Women Candidates
-
-**GET** `/analytics/women-candidates`
-
-Get percentage of women candidates by year and/or state.
-
-**Query Parameters:**
-- `year` (integer, optional): Filter by election year
-- `state` (integer, optional): Filter by state ID
-
-**Response:**
-```json
-[
-  {
-    "year": 2019,
-    "state": "Kerala",
-    "women_count": 45,
-    "total_count": 380,
-    "percentage": 11.84
-  }
-]
-```
+### Education Correlation
+**GET** `/analytics/education-correlation`  
+Returns win rates by education level, sorted by win rate.  
+**Response:** `[{"education": "Doctorate", "total_candidates": 858, "wins": 144, "win_rate": 16.78}, ...]`
 
 ---
 
-### 15. Closest Contests
+## Filter Parameters
 
-**GET** `/analytics/closest-contests`
+Most endpoints support optional filters:
+- `year`: Election year (required for some endpoints, range: 1991-2019)
+- `state`: State ID
+- `party`: Party ID
+- `gender`: M or F
+- `district`: District ID (filters by district name to include all constituencies with that name)
+- `constituency`: Constituency ID (filters specific constituency)
 
-Get top 10 closest election contests.
-
-**Query Parameters:**
-- `year` (integer, optional): Filter by election year
-
-**Response:**
-```json
-[
-  {
-    "year": 2019,
-    "state_name": "Karnataka",
-    "constituency_name": "Chikkaballapur",
-    "winner_party": "INC",
-    "winner": "M. Veerappa Moily",
-    "winner_votes": 123456,
-    "runner_up_party": "BJP",
-    "runner_up": "B. N. Bache Gowda",
-    "runner_up_votes": 123450,
-    "margin": 6,
-    "margin_percentage": 0.005
-  }
-]
-```
-
----
-
-### 16. Turnout-Margin Correlation
-
-**GET** `/analytics/correlation`
-
-Get correlation between turnout and margin percentage by state.
-
-**Query Parameters:**
-- `state` (integer, optional): Filter by state ID
-
-**Response:**
-```json
-[
-  {
-    "state": "Kerala",
-    "avg_turnout": 77.45,
-    "avg_margin": 12.34,
-    "data_points": 20,
-    "correlation": -0.23
-  }
-]
-```
+**Filter Hierarchy:** State → District → Constituency
 
 ---
 
 ## Error Responses
 
-All endpoints may return the following error responses:
-
 **400 Bad Request:**
 ```json
-{
-  "error": "Year parameter is required"
-}
+{"error": "Year parameter is required"}
 ```
 
 **404 Not Found:**
 ```json
-{
-  "error": "Route not found"
-}
+{"error": "Route not found"}
 ```
 
 **500 Internal Server Error:**
 ```json
-{
-  "error": "Failed to fetch data",
-  "details": "Detailed error message"
-}
+{"error": "Failed to fetch data", "details": "Error message"}
 ```
 
 ---
 
-## Rate Limiting
+## Notes
 
-Currently, there are no rate limits implemented. For production, consider implementing rate limiting.
-
-## CORS
-
-CORS is enabled for all origins. For production, configure CORS to allow only specific domains.
-
-## Pagination
-
-Endpoints that return lists support pagination via `limit` and `offset` query parameters. Default limit is 100.
-
-## Data Types
-
-- **Integer**: Numeric IDs, years, counts
-- **Decimal**: Percentages, vote counts, margins
-- **String**: Names, descriptions
-- **Boolean**: Flags (incumbent, turncoat, etc.)
-- **Date/Time**: Timestamps (ISO 8601 format)
-
-
+- All year filters are limited to 1991-2019
+- Only years with >= 1000 records are returned by `/years`
+- District filter includes all constituencies with the same name
+- Constituency filter targets a specific constituency ID
+- Default pagination: `limit=100`, `offset=0`
+- CORS enabled for all origins (configure for production)

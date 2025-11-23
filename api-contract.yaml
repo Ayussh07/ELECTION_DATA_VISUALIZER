@@ -1,0 +1,771 @@
+openapi: 3.0.0
+info:
+  title: Indian Election Data API
+  description: API for querying Indian Lok Sabha election data (1991-2019)
+  version: 1.0.0
+  contact:
+    name: Election Data API
+
+servers:
+  - url: http://localhost:5000/api
+    description: Development server
+
+paths:
+  /years:
+    get:
+      summary: Get all available election years
+      description: Returns list of years that have sufficient data (>= 1000 records). Only returns years between 1991-2019.
+      tags: [Basic]
+      responses:
+        '200':
+          description: List of years
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: integer
+                  example: 2019
+              example: [2019, 2014, 2009, 2004, 1999, 1998, 1996, 1991]
+
+  /states:
+    get:
+      summary: Get all states
+      tags: [Basic]
+      responses:
+        '200':
+          description: List of states
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                      example: 1
+                    name:
+                      type: string
+                      example: "Andhra Pradesh"
+
+  /parties:
+    get:
+      summary: Get all political parties
+      tags: [Basic]
+      responses:
+        '200':
+          description: List of parties
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                    party_type_tcpd:
+                      type: string
+                      nullable: true
+
+  /constituencies:
+    get:
+      summary: Get unique constituency names (districts) by state
+      description: Returns unique constituency names grouped by name. When state is provided, returns districts for that state.
+      tags: [Basic]
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: integer
+          description: State ID (optional)
+      responses:
+        '200':
+          description: List of unique constituency names
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+
+  /constituencies-list:
+    get:
+      summary: Get individual constituencies by state and/or district
+      description: Returns individual constituencies (not grouped). Can be filtered by state and/or district.
+      tags: [Basic]
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: integer
+          description: State ID (optional)
+        - name: district
+          in: query
+          schema:
+            type: integer
+          description: District ID (optional, filters by district name)
+      responses:
+        '200':
+          description: List of constituencies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                    constituency_no:
+                      type: integer
+                      nullable: true
+                    constituency_type:
+                      type: string
+                      nullable: true
+
+  /elections:
+    get:
+      summary: Get election results with filters
+      tags: [Data]
+      parameters:
+        - name: year
+          in: query
+          schema:
+            type: integer
+          description: Filter by election year
+        - name: state
+          in: query
+          schema:
+            type: integer
+          description: Filter by state ID
+        - name: party
+          in: query
+          schema:
+            type: integer
+          description: Filter by party ID
+        - name: constituency
+          in: query
+          schema:
+            type: string
+          description: Filter by constituency name (partial match using ILIKE)
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+          description: Number of results to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Pagination offset
+      responses:
+        '200':
+          description: Election results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /seat-share:
+    get:
+      summary: Get seat share by party for a year
+      description: Returns seat share by party with winners grouped by district. Includes all winners from all constituencies with the same district name.
+      tags: [Analytics]
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Election year
+        - name: state
+          in: query
+          schema:
+            type: integer
+          description: Filter by state ID
+        - name: party
+          in: query
+          schema:
+            type: integer
+          description: Filter by party ID
+        - name: gender
+          in: query
+          schema:
+            type: string
+            enum: [M, F]
+          description: Filter by gender
+        - name: district
+          in: query
+          schema:
+            type: integer
+          description: Filter by district ID (filters by district name to include all constituencies with that name)
+        - name: constituency
+          in: query
+          schema:
+            type: integer
+          description: Filter by specific constituency ID
+      responses:
+        '200':
+          description: Seat share data with winners grouped by district
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    party:
+                      type: string
+                    seats:
+                      type: integer
+                    winnersByDistrict:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          district:
+                            type: string
+                          winners:
+                            type: array
+                            items:
+                              type: string
+
+  /turnout:
+    get:
+      summary: Get voter turnout by state for a year
+      tags: [Analytics]
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Election year
+        - name: state
+          in: query
+          schema:
+            type: integer
+          description: Filter by state ID
+      responses:
+        '200':
+          description: Turnout data by state
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    state:
+                      type: string
+                    turnout_pct:
+                      type: number
+
+  /vote-share:
+    get:
+      summary: Get vote share by party
+      description: Returns aggregated vote share by party (when aggregate=true) or detailed vote share by state and party (when aggregate is not set).
+      tags: [Analytics]
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Election year
+        - name: party
+          in: query
+          schema:
+            type: integer
+          description: Filter by party ID
+        - name: aggregate
+          in: query
+          schema:
+            type: string
+            enum: ['true', '1', 'false', '0']
+          description: If 'true' or '1', returns aggregated vote share by party only (for charts)
+        - name: state
+          in: query
+          schema:
+            type: integer
+          description: Filter by state ID (only used when aggregate=true)
+        - name: gender
+          in: query
+          schema:
+            type: string
+            enum: [M, F]
+          description: Filter by gender (only used when aggregate=true)
+        - name: district
+          in: query
+          schema:
+            type: integer
+          description: Filter by district ID (only used when aggregate=true)
+        - name: constituency
+          in: query
+          schema:
+            type: integer
+          description: Filter by constituency ID (only used when aggregate=true)
+      responses:
+        '200':
+          description: Vote share data
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    description: Aggregated vote share (when aggregate=true)
+                    items:
+                      type: object
+                      properties:
+                        party:
+                          type: string
+                        total_votes:
+                          type: number
+                        vote_share_pct:
+                          type: number
+                  - type: array
+                    description: Vote share by state (when aggregate is not set)
+                    items:
+                      type: object
+                      properties:
+                        state:
+                          type: string
+                        party:
+                          type: string
+                        total_votes:
+                          type: number
+                        avg_vote_share:
+                          type: number
+
+  /gender-trend:
+    get:
+      summary: Get gender representation trends over years
+      tags: [Analytics]
+      parameters:
+        - name: party
+          in: query
+          schema:
+            type: integer
+          description: Filter by party ID
+        - name: state
+          in: query
+          schema:
+            type: integer
+          description: Filter by state ID
+        - name: gender
+          in: query
+          schema:
+            type: string
+            enum: [M, F]
+          description: Filter by gender
+        - name: district
+          in: query
+          schema:
+            type: integer
+          description: Filter by district ID
+        - name: constituency
+          in: query
+          schema:
+            type: integer
+          description: Filter by constituency ID
+      responses:
+        '200':
+          description: Gender trend data by year
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    year:
+                      type: integer
+                    gender:
+                      type: string
+                    count:
+                      type: integer
+                    percentage:
+                      type: number
+
+  /margins:
+    get:
+      summary: Get constituencies with narrowest victory margins
+      tags: [Analytics]
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Election year
+        - name: state
+          in: query
+          schema:
+            type: integer
+          description: Filter by state ID
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+          description: Number of results to return
+        - name: district
+          in: query
+          schema:
+            type: integer
+          description: Filter by district ID
+        - name: constituency
+          in: query
+          schema:
+            type: integer
+          description: Filter by constituency ID
+      responses:
+        '200':
+          description: List of constituencies with narrowest margins
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    year:
+                      type: integer
+                    state_name:
+                      type: string
+                    constituency_name:
+                      type: string
+                    winner_party:
+                      type: string
+                    winner:
+                      type: string
+                    winner_votes:
+                      type: number
+                    runner_up_party:
+                      type: string
+                    runner_up:
+                      type: string
+                    runner_up_votes:
+                      type: number
+                    margin:
+                      type: number
+                    margin_percentage:
+                      type: number
+
+  /kpis:
+    get:
+      summary: Get key performance indicators
+      tags: [Analytics]
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Election year
+        - name: state
+          in: query
+          schema:
+            type: integer
+          description: Filter by state ID
+        - name: gender
+          in: query
+          schema:
+            type: string
+            enum: [M, F]
+          description: Filter by gender
+        - name: district
+          in: query
+          schema:
+            type: integer
+          description: Filter by district ID
+        - name: constituency
+          in: query
+          schema:
+            type: integer
+          description: Filter by constituency ID
+      responses:
+        '200':
+          description: KPI data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_seats:
+                    type: integer
+                  overall_turnout:
+                    type: number
+                  women_candidates_pct:
+                    type: number
+
+  /search:
+    get:
+      summary: Search election data
+      description: Search for candidates, constituencies, or parties by name
+      tags: [Data]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search query string
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [candidate, party, constituency]
+          description: Filter search by type
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  candidates:
+                    type: array
+                    items:
+                      type: object
+                  constituencies:
+                    type: array
+                    items:
+                      type: object
+                  parties:
+                    type: array
+                    items:
+                      type: object
+
+  /analytics/highest-turnout:
+    get:
+      summary: Get state with highest voter turnout
+      tags: [Analytics]
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Election year
+      responses:
+        '200':
+          description: State with highest turnout
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:
+                    type: string
+                  avg_turnout:
+                    type: number
+
+  /analytics/seat-changes:
+    get:
+      summary: Get party seat changes between two consecutive elections
+      tags: [Analytics]
+      parameters:
+        - name: year1
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: First election year
+        - name: year2
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Second election year
+      responses:
+        '200':
+          description: Seat changes data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    party:
+                      type: string
+                    year1_seats:
+                      type: integer
+                    year2_seats:
+                      type: integer
+                    change:
+                      type: integer
+
+  /analytics/women-candidates:
+    get:
+      summary: Get percentage of women candidates
+      description: Returns percentage of women candidates across all elections. Year parameter is optional.
+      tags: [Analytics]
+      parameters:
+        - name: year
+          in: query
+          schema:
+            type: integer
+          description: Optional year filter
+      responses:
+        '200':
+          description: Women candidates percentage
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_women:
+                    type: integer
+                  total_candidates:
+                    type: integer
+                  percentage:
+                    type: number
+
+  /analytics/closest-contests:
+    get:
+      summary: Get constituencies with closest contests
+      tags: [Analytics]
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: Election year
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+          description: Number of results to return
+      responses:
+        '200':
+          description: List of closest contests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    year:
+                      type: integer
+                    state_name:
+                      type: string
+                    constituency_name:
+                      type: string
+                    winner_party:
+                      type: string
+                    winner:
+                      type: string
+                    winner_votes:
+                      type: number
+                    runner_up_party:
+                      type: string
+                    runner_up:
+                      type: string
+                    runner_up_votes:
+                      type: number
+                    margin:
+                      type: number
+                    margin_percentage:
+                      type: number
+
+  /analytics/correlation:
+    get:
+      summary: Get correlation between turnout and margin percentage by state
+      tags: [Analytics]
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: integer
+          description: Filter by state ID (optional)
+      responses:
+        '200':
+          description: Correlation data by state
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    state:
+                      type: string
+                    avg_turnout:
+                      type: number
+                    avg_margin:
+                      type: number
+                    data_points:
+                      type: integer
+                    correlation:
+                      type: number
+
+  /analytics/national-vs-regional:
+    get:
+      summary: Get vote share trends of national vs regional parties
+      description: Returns vote share trends over time categorized by party type (National, Regional, Other)
+      tags: [Analytics]
+      responses:
+        '200':
+          description: Vote share trends by party type
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    year:
+                      type: integer
+                    party_type:
+                      type: string
+                      enum: [National, Regional, Other]
+                    total_votes:
+                      type: number
+                    vote_share_pct:
+                      type: number
+
+  /analytics/education-correlation:
+    get:
+      summary: Get correlation between education level and winning chances
+      description: Returns win rates by education level, sorted by win rate descending
+      tags: [Analytics]
+      responses:
+        '200':
+          description: Education correlation data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    education:
+                      type: string
+                    total_candidates:
+                      type: integer
+                    wins:
+                      type: integer
+                    win_rate:
+                      type: number
+

@@ -12,8 +12,17 @@ const MarginsTable = () => {
   useEffect(() => {
     const year = searchParams.get('year');
     const state = searchParams.get('state');
+    const district = searchParams.get('district');
+    const constituency = searchParams.get('constituency');
+    const yearNum = year ? parseInt(year) : null;
+    // Only proceed if year is valid and within 1991-2019 range
+    if (!year || !yearNum || isNaN(yearNum) || yearNum < 1991 || yearNum > 2019) {
+      setData([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    getMargins(year, state, 50)
+    getMargins(year, state, 50, district, constituency)
       .then((response) => {
         // Handle both array format and { rows: [...] } format
         const data = Array.isArray(response.data) ? response.data : (response.data.rows || []);
@@ -24,7 +33,7 @@ const MarginsTable = () => {
         console.error('Error fetching margins:', error);
         setLoading(false);
       });
-  }, [searchParams.get('year'), searchParams.get('state')]); // Re-fetch when filters change
+  }, [searchParams.get('year'), searchParams.get('state'), searchParams.get('district'), searchParams.get('constituency')]); // Re-fetch when filters change
 
   const startIndex = (page - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;

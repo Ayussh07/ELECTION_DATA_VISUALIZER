@@ -15,13 +15,17 @@ const VoteShareChart = () => {
     const state = searchParams.get('state');
     const party = searchParams.get('party');
     const gender = searchParams.get('gender');
-    if (!year) {
-      // Wait for year to be set by Header component
+    const district = searchParams.get('district');
+    const constituency = searchParams.get('constituency');
+    const yearNum = year ? parseInt(year) : null;
+    // Only proceed if year is valid and within 1991-2019 range
+    if (!year || !yearNum || isNaN(yearNum) || yearNum < 1991 || yearNum > 2019) {
+      // Wait for valid year to be set by Header component
       return;
     }
-    console.log('VoteShareChart: Fetching data for year:', year, 'state:', state, 'party:', party, 'gender:', gender);
+    console.log('VoteShareChart: Fetching data for year:', year, 'state:', state, 'district:', district, 'constituency:', constituency, 'party:', party, 'gender:', gender);
     setLoading(true);
-    getVoteShare(year, party, true, state, gender) // aggregate=true for pie chart
+    getVoteShare(year, party, true, state, gender, district, constituency) // aggregate=true for pie chart
       .then((response) => {
         // Handle both array format and { rows: [...] } format
         const data = Array.isArray(response.data) ? response.data : (response.data.rows || []);
@@ -42,7 +46,7 @@ const VoteShareChart = () => {
         console.error('Error fetching vote share:', error);
         setLoading(false);
       });
-  }, [searchParams.get('year'), searchParams.get('state'), searchParams.get('party'), searchParams.get('gender')]); // Re-fetch when filters change
+  }, [searchParams.get('year'), searchParams.get('state'), searchParams.get('district'), searchParams.get('constituency'), searchParams.get('party'), searchParams.get('gender')]); // Re-fetch when filters change
 
   if (loading) {
     return (
